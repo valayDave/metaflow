@@ -173,6 +173,8 @@ class CondaStepDecorator(StepDecorator):
             CondaStepDecorator.environments = CondaStepDecorator.conda.environments(self.flow.name)
         return env_id
 
+    # ? HOW ARCHITECTURE IS SELECTED BY THE ENVIRONMENT CREATOR SO THAT IT GETS REPLICATED ON ANY ENVIRONMENT ? 
+    # $ Explicitly sets linux-64 for batch. 
     def _architecture(self, decos):
         for deco in decos:
             if deco.name == 'batch':

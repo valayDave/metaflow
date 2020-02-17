@@ -10,3 +10,4 @@ dist/
 .tox/
 
 .ipynb_checkpoints/
+.VSCodeCounter/

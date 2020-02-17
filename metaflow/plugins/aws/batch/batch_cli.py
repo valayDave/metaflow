@@ -155,6 +155,10 @@ def kill(ctx, run_id, user, my_runs):
     default=5 * 24 * 60 * 60,
     help="Run time limit in seconds for the Batch job. " "Default is 5 days.",
 )
+# ? HOW DOES METAFLOW ALTER IT's CLI BASED EXECUTION WHEN EXECUTING REMOTE BATCH JOBS ?
+# $ This function is important because metaflow executes each step as a subprocess currently. 
+# $ So when Executing a step with Batch using commandline arguments this function 
+# $ has overriden the step call. 
 @click.pass_context
 def step(
     ctx,
