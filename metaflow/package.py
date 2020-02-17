@@ -26,6 +26,8 @@ class MetaflowPackage(object):
         self.environment = environment
         self.metaflow_root = os.path.dirname(__file__)
         environment.init_environment(logger)
+        # $ THIS PROCESS IS TAKING TOO LONG. 
+        # $ I Need to Add A logger to see How fast is it resolving the Packages. 
         for step in flow:
             for deco in step.decorators:
                 deco.package_init(flow,

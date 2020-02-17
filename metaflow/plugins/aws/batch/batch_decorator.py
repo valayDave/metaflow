@@ -143,6 +143,8 @@ class BatchDecorator(StepDecorator):
         self.package = package
         self.run_id = run_id
 
+    # ? HOW DOES METAFLOW SYNC CODE PACKAGES TO EXECUTE Via Batch. 
+    # $ Every Step decorator has a runtime_task_created method that needs to be implemented. 
     def runtime_task_created(
         self, datastore, task_id, split_index, input_paths, is_cloned):
         if not is_cloned:
