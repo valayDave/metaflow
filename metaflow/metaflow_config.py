@@ -3,8 +3,6 @@ import json
 import logging
 import pkg_resources
 import sys
-
-
 from metaflow.exception import MetaflowException
 
 # Disable multithreading security on MacOS
@@ -168,8 +166,16 @@ def get_pinned_conda_libs():
     }
 
 
-cached_aws_sandbox_creds = None
+KUBE_CONFIG_FILE_PATH = from_conf('METAFLOW_KUBE_CONFIG_PATH')
 
+def get_kubernetes_client():
+    from kubernetes import config
+    
+    Kube_Configured_Api_Client = config.load_kube_config(config_file=KUBE_CONFIG_FILE_PATH)
+    return Kube_Configured_Api_Client
+    
+
+cached_aws_sandbox_creds = None
 def get_authenticated_boto3_client(module):
     from metaflow.exception import MetaflowException
     import requests
