@@ -14,7 +14,7 @@ from metaflow.metaflow_config import BATCH_METADATA_SERVICE_URL, DATATOOLS_S3ROO
     BATCH_METADATA_SERVICE_HEADERS
 from metaflow import util
 
-from .kube_client import BatchClient
+from .kube_client import KubeClient
 
 
 class KubeException(MetaflowException):
@@ -29,7 +29,7 @@ class Kube(object):
     def __init__(self, metadata, environment):
         self.metadata = metadata
         self.environment = environment
-        self._client = BatchClient()
+        self._client = KubeClient()
         atexit.register(lambda: self.job.kill() if hasattr(self, 'job') else None)
     
     # ? HOW IS THE PACKAGED APP EXECUTED ON BATCH. 

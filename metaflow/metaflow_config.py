@@ -166,7 +166,7 @@ def get_pinned_conda_libs():
     }
 
 
-KUBE_CONFIG_FILE_PATH = from_conf('METAFLOW_KUBE_CONFIG_PATH')
+KUBE_CONFIG_FILE_PATH = from_conf('METAFLOW_KUBE_CONFIG_PATH','~/.kube/config')
 
 def get_kubernetes_client():
     from kubernetes import config

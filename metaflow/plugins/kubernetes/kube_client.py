@@ -3,7 +3,6 @@ import select
 import sys
 import time
 import hashlib
-from metaflow.client import get_namespace
 
 try:
     unicode
@@ -33,6 +32,7 @@ class KubeClient(object):
         :return: [tuple with KubeJobSpec Objects]
         :rtype: [Tuple(KubeJobSpec)]
         """
+        from metaflow.client import get_namespace
         # $ FIGURE KUBE API To Check and Find whichever Jobs are Active,
         jobs = kube_client.BatchV1Api(self._client).list_namespaced_job(get_namespace(),include_uninitialized=False,timeout_seconds=60)
         return (KubeJobSpec(self._client,job.metadata.name,job.metadata.namespace) for job in jobs.items if job.status.active is not None)

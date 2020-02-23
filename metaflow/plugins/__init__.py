@@ -20,6 +20,7 @@ from .timeout_decorator import TimeoutDecorator
 from .environment_decorator import EnvironmentDecorator
 from .retry_decorator import RetryDecorator
 from .aws.batch.batch_decorator import BatchDecorator, ResourcesDecorator
+from .kubernetes.kube_decorator import KubeDecorator
 from .conda.conda_step_decorator import CondaStepDecorator
 
 STEP_DECORATORS = [CatchDecorator,
@@ -27,6 +28,7 @@ STEP_DECORATORS = [CatchDecorator,
                    EnvironmentDecorator,
                    ResourcesDecorator,
                    RetryDecorator,
+                   KubeDecorator,
                    BatchDecorator,
                    CondaStepDecorator]
 

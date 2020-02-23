@@ -59,9 +59,9 @@ class ResourcesDecorator(StepDecorator):
 
 class KubeDecorator(StepDecorator):
     """
-    Step decorator to specify that this step should execute on Batch.
+    Step decorator to specify that this step should execute on Kubernetes.
 
-    This decorator indicates that your step should execute on Batch. Note that you can
+    This decorator indicates that your step should execute on Kubenetes. Note that you can
     apply this decorator automatically to all steps using the ```--with kube``` argument
     when calling run. Step level decorators are overrides and will force a step to execute
     on Batch regardless of the ```--with``` specification.
@@ -88,12 +88,6 @@ class KubeDecorator(StepDecorator):
     image : string
         Image to use when launching on Batch. If not specified, a default image mapping to
         the current version of Python is used
-    queue : string
-        Queue to submit the job to. Defaults to the one determined by the environment variable
-        METAFLOW_BATCH_JOB_QUEUE
-    iam_role : string
-        IAM role that Batch can use to access S3. Defaults to the one determined by the environment
-        variable METAFLOW_ECS_S3_ACCESS_IAM_ROLE
     """
     name = 'kube'
     defaults = {
