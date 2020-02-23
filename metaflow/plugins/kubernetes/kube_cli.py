@@ -33,7 +33,7 @@ def cli():
 
 
 @cli.group(help="Commands related to Kube.")
-def batch():
+def kube():
     pass
 
 
@@ -87,7 +87,7 @@ def _sync_metadata(echo, metadata, datastore_root, attempt):
         except err as e:  # noqa F841
             pass
 
-@batch.command(help="List running Batch tasks of this flow")
+@kube.command(help="List running Kube tasks of this flow")
 @click.option(
     "--my-runs", default=False, is_flag=True, help="Run the command over all tasks."
 )
@@ -101,7 +101,7 @@ def list(ctx, run_id, user, my_runs):
     )
 
 
-@batch.command(help="Terminate running Batch tasks of this flow.")
+@kube.command(help="Terminate running Kube tasks of this flow.")
 @click.option("--my-runs", default=False, is_flag=True, help="Kill all running tasks.")
 @click.option("--user", default=None, help="List tasks for the given user.")
 @click.option(
@@ -109,33 +109,29 @@ def list(ctx, run_id, user, my_runs):
 )
 @click.pass_context
 def kill(ctx, run_id, user, my_runs):
-    batch = Batch(ctx.obj.metadata, ctx.obj.environment)
+    kube_1 = Kube(ctx.obj.metadata, ctx.obj.environment)
     _execute_cmd(
-        batch.kill_jobs, ctx.obj.flow.name, run_id, user, my_runs, ctx.obj.echo
+        kube_1.kill_jobs, ctx.obj.flow.name, run_id, user, my_runs, ctx.obj.echo
     )
 
 
-@batch.command(
-    help="Execute a single task using Batch. This command "
-    "calls the top-level step command inside a Batch "
-    "job with the given options. Typically you do not "
+@kube.command(
+    help="Execute a single task using Kube. This command "
+    "calls the top-level step command inside a Kube Job Container"
+    "with the given options. Typically you do not "
     "call this command directly; it is used internally "
     "by Metaflow."
 )
 @click.argument("step-name")
 @click.argument("code-package-sha")
 @click.argument("code-package-url")
-@click.option("--executable", help="Executable requirement for Batch.")
+@click.option("--executable", help="Executable requirement for Kube.")
 @click.option(
-    "--image", help="Docker image requirement for Batch. In name:version format."
+    "--image", help="Docker image requirement for Kube. In name:version format."
 )
-@click.option(
-    "--iam_role", help="IAM role requirement for Batch"
-)
-@click.option("--cpu", help="CPU requirement for Batch.")
-@click.option("--gpu", help="GPU requirement for Batch.")
-@click.option("--memory", help="Memory requirement for Batch.")
-@click.option("--queue", help="Job execution queue for Batch.")
+@click.option("--cpu", help="CPU requirement for Kube.")
+@click.option("--gpu", help="GPU requirement for Kube.")
+@click.option("--memory", help="Memory requirement for Kube.")
 @click.option("--run-id", help="Passed to the top-level 'step'.")
 @click.option("--task-id", help="Passed to the top-level 'step'.")
 @click.option("--input-paths", help="Passed to the top-level 'step'.")
@@ -155,10 +151,6 @@ def kill(ctx, run_id, user, my_runs):
     default=5 * 24 * 60 * 60,
     help="Run time limit in seconds for the Batch job. " "Default is 5 days.",
 )
-# ? HOW DOES METAFLOW ALTER IT's CLI BASED EXECUTION WHEN EXECUTING REMOTE BATCH JOBS ?
-# $ This function is important because metaflow executes each step as a subprocess currently. 
-# $ So when Executing a step with Batch using commandline arguments this function 
-# $ has overriden the step call. 
 @click.pass_context
 def step(
     ctx,
@@ -167,11 +159,9 @@ def step(
     code_package_url,
     executable=None,
     image=None,
-    iam_role=None,
     cpu=None,
     gpu=None,
     memory=None,
-    queue=None,
     run_time_limit=None,
     **kwargs
 ):
@@ -214,7 +204,7 @@ def step(
             retry_deco[0].attributes.get("minutes_between_retries", 1)
         )
 
-    # Set batch attributes
+    # Set kube attributes
     attrs = {
         "metaflow.user": util.get_username(),
         "metaflow.flow_name": ctx.obj.flow.name,
@@ -244,18 +234,16 @@ def step(
             "Sleeping %d minutes before the next Batch retry" % minutes_between_retries
         )
         time.sleep(minutes_between_retries * 60)
-    batch = Batch(ctx.obj.metadata, ctx.obj.environment)
+    kube = Kube(ctx.obj.metadata, ctx.obj.environment)
     try:
-        with ctx.obj.monitor.measure("metaflow.batch.launch"):
-            batch.launch_job(
+        with ctx.obj.monitor.measure("metaflow.kube.launch"):
+            kube.launch_job(
                 step_name,
                 step_cli,
                 code_package_sha,
                 code_package_url,
                 ctx.obj.datastore.TYPE,
                 image=image,
-                queue=queue,
-                iam_role=iam_role,
                 cpu=cpu,
                 gpu=gpu,
                 memory=memory,
@@ -268,8 +256,8 @@ def step(
         _sync_metadata(echo, ctx.obj.metadata, datastore_root, retry_count)
         sys.exit(METAFLOW_EXIT_DISALLOW_RETRY)
     try:
-        batch.wait(echo=echo)
-    except BatchKilledException:
+        kube.wait(echo=echo)
+    except KubeKilledException:
         # don't retry killed tasks
         traceback.print_exc()
         _sync_metadata(echo, ctx.obj.metadata, datastore_root, retry_count)

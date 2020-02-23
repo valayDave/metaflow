@@ -51,7 +51,7 @@ class Kube(object):
             )
         jobs = []
         for job in self._client.unfinished_jobs():
-            if regex in job['jobName']:
+            if regex in job.job_name:
                 jobs.append(job)
         return jobs
 
@@ -71,7 +71,7 @@ class Kube(object):
             for job in jobs:
                 echo(
                     '{name} [{id}] ({status})'.format(
-                        name=job['jobName'], id=job['jobId'], status=job['status']
+                        name=job.job_name, id=job.id, status=job.status
                     )
                 )
         else:
@@ -79,20 +79,19 @@ class Kube(object):
 
     def kill_jobs(self, flow_name, run_id, user, echo):
         jobs = self._search_jobs(flow_name, run_id, user)
-
         if jobs:
             for job in jobs:
                 try:
                     self._client.attach_job(job['jobId']).kill()
                     echo(
                         'Killing Kube job: {name} [{id}] ({status})'.format(
-                            name=job['jobName'], id=job['jobId'], status=job['status']
+                            name=job.job_name, id=job.id, status=job.status
                         )
                     )
                 except Exception as e:
                     echo(
-                        'Failed to terminate Batch job %s [%s]'
-                        % (job['jobId'], repr(e))
+                        'Failed to terminate Kube job %s %s [%s]'
+                        % (job.job_name,job.id, repr(e))
                     )
         else:
             echo('No running Batch jobs found.')
@@ -130,7 +129,6 @@ class Kube(object):
                 self._command(code_package_url,
                               self.environment, step_name, [step_cli])) \
             .image(image) \
-            .iam_role(iam_role) \
             .cpu(cpu) \
             .gpu(gpu) \
             .memory(memory) \
@@ -146,9 +144,11 @@ class Kube(object):
             .environment_variable('METAFLOW_DATATOOLS_S3ROOT', DATATOOLS_S3ROOT) \
             .environment_variable('METAFLOW_DEFAULT_DATASTORE', 's3') \
             .environment_variable('METAFLOW_DEFAULT_METADATA', DEFAULT_METADATA)
+            # $ TODO : Set the AWS Keys based Kube Secret references here. 
+
         for name, value in env.items():
             job.environment_variable(name, value)
-        for name, value in self.metadata.get_runtime_environment('batch').items():
+        for name, value in self.metadata.get_runtime_environment('kube').items():
             job.environment_variable(name, value)
         if attrs:
             for key, value in attrs.items():
@@ -180,7 +180,8 @@ class Kube(object):
                 else:
                     return tail, False
             return tail, True
-
+        
+        # $ TODO : This may have issues. Check this During Time of Execution. 
         wait_for_launch(self.job)
         logs = self.job.logs()
         while True:

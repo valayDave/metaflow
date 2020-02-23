@@ -3,6 +3,7 @@ import select
 import sys
 import time
 import hashlib
+from metaflow.client import get_namespace
 
 try:
     unicode
@@ -12,33 +13,35 @@ except NameError:
 
 from metaflow.exception import MetaflowException
 from metaflow.metaflow_config import get_kubernetes_client
-import kubernetes.client as kube_client
 
+import kubernetes.client as kube_client
+from kubernetes import watch
+from kubernetes.client.rest import ApiException
+
+MAX_MEMORY = 32*1000
+MAX_CPU = 8
+
+    
 class KubeClient(object):
     def __init__(self):
         # todo : set the 
         self._client = get_kubernetes_client()
-        self._batch_client = kube_client.BatchV1Api(self._client)
-
 
     def unfinished_jobs(self):
-        # $ TODO : FIGURE KUBE API To Check and Find whichever Jobs are Active,
-        queues = self.active_job_queues()
-        return (
-            job
-            for queue in queues
-            for status in ['SUBMITTED', 'PENDING', 'RUNNABLE', 'STARTING', 'RUNNING']
-            for page in self._client.get_paginator('list_jobs').paginate(
-                jobQueue=queue, jobStatus=status
-            )
-            for job in page['jobSummaryList']
-        )
+        """unfinished_jobs [Gets the Kube jobs which are unfinished.]
+        
+        :return: [tuple with KubeJobSpec Objects]
+        :rtype: [Tuple(KubeJobSpec)]
+        """
+        # $ FIGURE KUBE API To Check and Find whichever Jobs are Active,
+        jobs = kube_client.BatchV1Api(self._client).list_namespaced_job(get_namespace(),include_uninitialized=False,timeout_seconds=60)
+        return (KubeJobSpec(self._client,job.metadata.name,job.metadata.namespace) for job in jobs.items if job.status.active is not None)
 
     def job(self):
         return KubeJob(self._client)
 
-    def attach_job(self, job_id):
-        job = RunningJob(job_id, self._client)
+    def attach_job(self, job_name,namespace):
+        job = RunningKubeJob(self._client,job_name,namespace)
         return job.update()
 
 
@@ -49,100 +52,106 @@ class KubeJobException(MetaflowException):
 class KubeJob(object):
     def __init__(self, client):
         self._client = client
-        self.body = body = self._client.V1Job(api_version="batch/v1", kind="Job")
-        tree = lambda: defaultdict(tree)
+        self._api_client = kube_client.BatchV1Api(client)
+        self.payload = kube_client.V1Job(api_version="batch/v1", kind="Job")
+        self.payload.metadata = kube_client.V1ObjectMeta()
+        self.payload.status = kube_client.V1JobStatus()
+        self.namespace_name = None
+        self.name = None
+        self.template = kube_client.V1PodTemplate()
+        self.template.tempate = kube_client.V1PodTemplateSpec()
+        self.template.tempate.spec = client.V1PodSpec()
+        self.env_list = []
+        self._image = None
+        self.container = kube_client.V1Container(name='metaflow-job') 
+        self.command = None # $ Need to figure how to structure this properly. 
+        self.container.resources.limits.cpu = MAX_CPU*1000+"m" # $ NOTE: Currently Setting Hard Limits. Will Change Later
+        self.container.resources.limits.memory = MAX_MEMORY+"Mi" # $ NOTE: Currently Setting Hard Limits. Will Change Later
 
-        self.payload = tree()
 
     def execute(self):
+        """execute [Runs the Job and yields a RunningKubeJob object]
+        :raises KubeJobException: [Upon failure on execution]
+        :return: RunningKubeJob
+        :rtype: [RunningKubeJob]
+        """
         if self._image is None:
             raise KubeJobException(
                 'Unable to launch Kubernetes Job job. No docker image specified.'
             )
-        self.payload 
-        # $ TODO :  This can have a new Job created with the Kubernetes.
-        job_id = None
-        job = RunningJob(job_id, self._client)
+        if self.namespace_name is None:
+            raise KubeJobException("Unable to launch Kubernetes Job Without Namespace.")
+
+        self.container.image = self._image
+        self.container.env = self.env_list
+        self.template.template.spec.containers = [self.container]
+        self.payload.spec = kube_client.V1JobSpec(ttl_seconds_after_finished=600, template=self.template.template)
+        try: 
+            api_response = self._api_client.create_namespaced_job(self.namespace,self.payload)
+            job_id = api_response['metadata']['uid']
+        except ApiException as e:
+            KubeJobException("Exception when calling API: %s\n" % e)
+
+        
+        # $ TODO :  Return the Job From here. 
+        job = RunningKubeJob(self._client,self.name,self.namespace)
         return job.update()
 
-    
-
-    def _job_def_arn(self, image, job_role):
-        def_name = 'metaflow_%s' % hashlib.sha224((image).encode('utf-8')).hexdigest()
-        payload = {'jobDefinitionName': def_name, 'status': 'ACTIVE'}
-        response = self._client.describe_job_definitions(**payload)
-        if len(response['jobDefinitions']) > 0:
-            return response['jobDefinitions'][0]['jobDefinitionArn']
-        payload = {
-            'jobDefinitionName': def_name,
-            'type': 'container',
-            'containerProperties': {
-                'image': image,
-                'jobRoleArn': job_role,
-                'command': ['echo', 'hello world'],
-                'memory': 4000,
-                'vcpus': 1,
-            },
-        }
-        response = self._client.register_job_definition(**payload)
-        return response['jobDefinitionArn']
-
     def job_name(self, job_name):
-        self.payload['jobName'] = job_name
+        self.payload.metadata.name = job_name
+        self.name = job_name
         return self
 
+    def namespace(self,namespace_name):
+        self.namespace_name = namespace_name
+        return self
 
     def image(self, image):
         self._image = image
         return self
 
+    def args(self,args):
+        if not isinstance(args,list) :
+            raise KubeJobException("Invalid Args Type. Needs to be Of Type List but got {}".format(type(args)))
+        self.container.args = args
+        return self
 
     def command(self, command):
-        if 'command' not in self.payload['containerOverrides']:
-            self.payload['containerOverrides']['command'] = []
-        self.payload['containerOverrides']['command'].extend(command)
+        if not isinstance(command,list) :
+            raise KubeJobException("Invalid Command Type. Needs to be Of Type List but got {}".format(type(command)))
+        self.container.command = command
         return self
 
     def cpu(self, cpu):
         if not (isinstance(cpu, (int, unicode, basestring)) and int(cpu) > 0):
             raise KubeJobException(
                 'Invalid CPU value ({}); it should be greater than 0'.format(cpu))
-        self.payload['containerOverrides']['vcpus'] = int(cpu)
+        
+        self.container.resources.requests.cpu = int(cpu)*1000+"m"
         return self
 
     def memory(self, mem):
         if not (isinstance(mem, (int, unicode, basestring)) and int(mem) > 0):
             raise KubeJobException(
                 'Invalid memory value ({}); it should be greater than 0'.format(mem))
-        self.payload['containerOverrides']['memory'] = int(mem)
+        self.container.resources.requests.memory = int(mem)+"Mi"
         return self
 
+    # THIS WILL COME LATER
     def gpu(self, gpu):
         if not (isinstance(gpu, (int, unicode, basestring))):
             raise KubeJobException(
                 'invalid gpu value: ({}) (should be 0 or greater)'.format(gpu))
         if int(gpu) > 0:
-            if 'resourceRequirements' not in self.payload['containerOverrides']:
-                self.payload['containerOverrides']['resourceRequirements'] = []
-            self.payload['containerOverrides']['resourceRequirements'].append(
-                {'type': 'GPU', 'value': str(gpu)}
-            )
+            pass # $ todo : Figure GPU Here. 
         return self
 
     def environment_variable(self, name, value):
-        if 'environment' not in self.payload['containerOverrides']:
-            self.payload['containerOverrides']['environment'] = []
-        self.payload['containerOverrides']['environment'].append(
-            {'name': name, 'value': str(value)}
-        )
+        self.env_list.append(kube_client.V1EnvVar(name=name,value=value))
         return self
 
     def timeout_in_secs(self, timeout_in_secs):
         self.payload['timeout']['attemptDurationSeconds'] = timeout_in_secs
-        return self
-
-    def parameter(self, key, value):
-        self.payload['parameters'][key] = str(value)
         return self
 
 
@@ -160,15 +169,14 @@ class limit(object):
         return wrapped
 
 
-class RunningJob(object):
-
-    NUM_RETRIES = 5
-
-    def __init__(self, id, client):
-        self._id = id
+class KubeJobSpec(object):
+    def __init__(self,client,job_name,namespace):
+        super().__init__()
         self._client = client
+        self._batch_api_client = kube_client.BatchV1Api(client)
+        self.job_name = job_name
+        self.namespace = namespace
         self._data = {}
-
     def __repr__(self):
         return '{}(\'{}\')'.format(self.__class__.__name__, self._id)
 
@@ -178,18 +186,19 @@ class RunningJob(object):
     @limit(1)
     def _update(self):
         try:
-            data = self._client.describe_jobs(jobs=[self._id])
-        except self._client.exceptions.ClientException:
+            # https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/BatchV1Api.md#read_namespaced_job
+            data = self._batch_api_client.read_namespaced_job(self.job_name,self.namespace)
+        except ApiException as e :
             return
-        self._apply(data['jobs'][0])
+        self._apply(data)
 
     def update(self):
         self._update()
         return self
-
+    
     @property
     def id(self):
-        return self._id
+        return self.info.metadata.uid
 
     @property
     def info(self):
@@ -199,83 +208,79 @@ class RunningJob(object):
 
     @property
     def job_name(self):
-        return self.info['jobName']
+        return self.info.metadata.name
 
     @property
     def status(self):
         if not self.is_done:
             self.update()
-        return self.info['status']
+        if self.is_running:
+            return 'RUNNING'
+        elif self.is_successful:
+            return 'COMPLETED'
+        elif self.is_crashed:
+            return 'FAILED'
+        else:
+            return 'UNKNOWN_STATUS'
+        
 
     @property
     def status_reason(self):
-        return self.info.get('statusReason')
+        return self.reason
 
     @property
     def created_at(self):
-        return self.info['createdAt']
-
-    @property
-    def stopped_at(self):
-        return self.info.get('stoppedAt', 0)
+        return self.info.status.start_time
 
     @property
     def is_done(self):
-        if self.stopped_at == 0:
+        if self.info.status.completion_time is None:
             self.update()
-        return self.stopped_at > 0
+        return self.info.status.completion_time is None
 
     @property
     def is_running(self):
-        return self.status == 'RUNNING'
+        return self.info.status.active == 1
 
     @property
     def is_successful(self):
-        return self.status == 'SUCCEEDED'
+        return self.info.status.succeeded is not None
 
     @property
     def is_crashed(self):
         # TODO: Check statusmessage to find if the job crashed instead of failing
-        return self.status == 'FAILED'
+        return self.info.status.failed is not None
 
     @property
     def reason(self):
-        return self.info['container'].get('reason')
+        reason = []
+        if self.info.status.conditions is not None:
+            for obj in self.info.status.conditions:
+                if obj.reason is not None:
+                    reason.append(obj.reason)
 
-    @property
-    def status_code(self):
-        if not self.is_done:
-            self.update()
-        return self.info['container'].get('exitCode')
+        return '\n'.join(reason)
 
-    def wait_for_running(self):
-        if not self.is_running and not self.is_done:
-            BatchWaiter(self._client).wait_for_running(self.id)
 
-    @property
-    def log_stream_name(self):
-        return self.info['container'].get('logStreamName')
+# $ ? Doubt : Why do u inherit Object ?
+class RunningKubeJob(KubeJobSpec):
 
+    NUM_RETRIES = 5
+
+    def __init__(self, client, job_name, namespace):
+        super().__init__(client, job_name, namespace)
+
+    # $ https://stackoverflow.com/questions/56124320/how-to-get-log-and-describe-of-pods-in-kubernetes-by-python-client
     def logs(self):
-        def get_log_stream(job):
-            log_stream_name = job.log_stream_name
-            if log_stream_name:
-                return BatchLogs('/aws/batch/job', log_stream_name, sleep_on_no_data=1)
-            else:
-                return None
-
-        log_stream = None
-        while True:
-            if self.is_running or self.is_done:
-                log_stream = get_log_stream(self)
-                break
-            elif not self.is_done:
-                self.wait_for_running()
-
+        pod_label_selector = "controller-uid=" + self.info.metadata.labels.get('controller-uid')
+        pods_list = kube_client.CoreV1Api(self._client).list_namespaced_pod(self.namespace,label_selector=pod_label_selector, timeout_seconds=10)
+        pod_name = pods_list.items[0].metadata.name
+        # There is no Need to check if the job is in runnable state as the Job will be runnnig on Kube
+        watcher = watch.Watch()
         for i in range(self.NUM_RETRIES):
             try:
                 check_after_done = 0
-                for line in log_stream:
+                for line in watcher.stream(kube_client.CoreV1Api(self._client).read_namespaced_pod_log, name=pod_name, namespace=self.namespace):
                     if not line:
                         if self.is_done:
                             if check_after_done > 1:
@@ -293,105 +298,5 @@ class RunningJob(object):
 
     def kill(self):
         if not self.is_done:
-            self._client.terminate_job(
-                jobId=self._id, reason='Metaflow initiated job termination.')
+            self._batch_api_client.delete_namespaced_job(self.job_name,self.namespace)
         return self.update()
-
-
-class BatchWaiter(object):
-    def __init__(self, client):
-        try:
-            from botocore import waiter
-        except:
-            raise KubeJobException(
-                'Could not import module \'botocore\' which '
-                'is required for Batch jobs. Install botocore '
-                'first.'
-            )
-        self._client = client
-        self._waiter = waiter
-
-    def wait_for_running(self, job_id):
-        model = self._waiter.WaiterModel(
-            {
-                'version': 2,
-                'waiters': {
-                    'JobRunning': {
-                        'delay': 1,
-                        'operation': 'DescribeJobs',
-                        'description': 'Wait until job starts running',
-                        'maxAttempts': 1000000,
-                        'acceptors': [
-                            {
-                                'argument': 'jobs[].status',
-                                'expected': 'SUCCEEDED',
-                                'matcher': 'pathAll',
-                                'state': 'success',
-                            },
-                            {
-                                'argument': 'jobs[].status',
-                                'expected': 'FAILED',
-                                'matcher': 'pathAny',
-                                'state': 'success',
-                            },
-                            {
-                                'argument': 'jobs[].status',
-                                'expected': 'RUNNING',
-                                'matcher': 'pathAny',
-                                'state': 'success',
-                            },
-                        ],
-                    }
-                },
-            }
-        )
-        self._waiter.create_waiter_with_client('JobRunning', model, self._client).wait(
-            jobs=[job_id]
-        )
-
-
-class BatchLogs(object):
-    def __init__(self, group, stream, pos=0, sleep_on_no_data=0):
-        self._client = get_authenticated_boto3_client('logs')
-        self._group = group
-        self._stream = stream
-        self._pos = pos
-        self._sleep_on_no_data = sleep_on_no_data
-        self._buf = deque()
-        self._token = None
-
-    def _get_events(self):
-        if self._token:
-            response = self._client.get_log_events(
-                logGroupName=self._group,
-                logStreamName=self._stream,
-                startTime=self._pos,
-                nextToken=self._token,
-                startFromHead=True,
-            )
-        else:
-            response = self._client.get_log_events(
-                logGroupName=self._group,
-                logStreamName=self._stream,
-                startTime=self._pos,
-                startFromHead=True,
-            )
-        self._token = response['nextForwardToken']
-        return response['events']
-
-    def __iter__(self):
-        while True:
-            self._fill_buf()
-            if len(self._buf) == 0:
-                yield ''
-                if self._sleep_on_no_data > 0:
-                    select.poll().poll(self._sleep_on_no_data * 1000)
-            else:
-                while self._buf:
-                    yield self._buf.popleft()
-
-    def _fill_buf(self):
-        events = self._get_events()
-        for event in events:
-            self._buf.append(event['message'])
-            self._pos = event['timestamp']
