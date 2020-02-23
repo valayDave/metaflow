@@ -15,7 +15,7 @@ from metaflow import util
 
 from .kube import Kube, KubeException
 from metaflow.metaflow_config import ECS_S3_ACCESS_IAM_ROLE, BATCH_JOB_QUEUE, \
-                    BATCH_CONTAINER_IMAGE, BATCH_CONTAINER_REGISTRY
+                    BATCH_CONTAINER_IMAGE, BATCH_CONTAINER_REGISTRY, KUBE_NAMESPACE
 
 try:
     # python2
@@ -88,6 +88,9 @@ class KubeDecorator(StepDecorator):
     image : string
         Image to use when launching on Batch. If not specified, a default image mapping to
         the current version of Python is used
+    kube_namespace : string 
+        Namespace on Kubernetes to execute on. This is different than the metaflow namespace. 
+        Namespaces in kubernetes create a way through which cluster level resource limits can be allocated. 
     """
     name = 'kube'
     defaults = {
@@ -95,6 +98,7 @@ class KubeDecorator(StepDecorator):
         'gpu': '0',
         'memory': '4000',
         'image': None,
+        'kube_namespace':None
     }
     package_url = None
     package_sha = None
@@ -108,6 +112,10 @@ class KubeDecorator(StepDecorator):
             else:
                 self.attributes['image'] = 'python:%s.%s' % (platform.python_version_tuple()[0],
                     platform.python_version_tuple()[1])
+        
+        if not self.attributes['kube_namespace']:
+            self.attributes['kube_namespace'] = KUBE_NAMESPACE
+
         if not KubeDecorator._get_registry(self.attributes['image']):
             if BATCH_CONTAINER_REGISTRY:
                 self.attributes['image'] = '%s/%s' % (BATCH_CONTAINER_REGISTRY.rstrip('/'), 
@@ -143,7 +151,7 @@ class KubeDecorator(StepDecorator):
     def runtime_step_cli(self, cli_args, retry_count, max_user_code_retries):
         if retry_count <= max_user_code_retries:
             # after all attempts to run the user code have failed, we don't need
-            # Batch anymore. We can execute possible fallback code locally.
+            # Kube anymore. We can execute possible fallback code locally.
             cli_args.commands = ['kube', 'step']
             cli_args.command_args.append(self.package_sha)
             cli_args.command_args.append(self.package_url)

@@ -33,9 +33,10 @@ class KubeClient(object):
         :return: [tuple with KubeJobSpec Objects]
         :rtype: [Tuple(KubeJobSpec)]
         """
+        # $ (TODO) : NAMESPACE NEEDS TO COME FROM ENV VAR. 
         # ! NAMESPACES NEED TO BE FIXED. NEED TO DECLARE AN ENV VAR FOR MY Kubernetes EVN. 
         from metaflow.client import get_namespace
-        # $ FIGURE KUBE API To Check and Find whichever Jobs are Active,
+        # $ Get the Jobs.
         jobs = kube_client.BatchV1Api(self._client).list_namespaced_job(get_namespace(),include_uninitialized=False,timeout_seconds=60)
         return (KubeJobSpec(self._client,job.metadata.name,job.metadata.namespace) for job in jobs.items if job.status.active is not None)
 
@@ -57,6 +58,7 @@ class KubeJob(object):
         self._api_client = kube_client.BatchV1Api(client)
         self.payload = kube_client.V1Job(api_version="batch/v1", kind="Job")
         self.payload.metadata = kube_client.V1ObjectMeta()
+        self.payload.metadata.labels = []
         self.payload.status = kube_client.V1JobStatus()
         self.namespace_name = None
         self.name = None
@@ -72,8 +74,8 @@ class KubeJob(object):
 
     def execute(self):
         """execute [Runs the Job and yields a RunningKubeJob object]
-        :raises KubeJobException: [Upon failure on execution]
-        :return: RunningKubeJob
+        :raises KubeJobException: [Upon failure of submitting Job for Execution]
+        :return: RunningKubeJob or None
         :rtype: [RunningKubeJob]
         """
         if self._image is None:
@@ -91,29 +93,31 @@ class KubeJob(object):
         self.template.spec = kube_client.V1PodSpec(containers=[self.container],restart_policy='Never')
         self.payload.spec = kube_client.V1JobSpec(ttl_seconds_after_finished=600, template=self.template)
         try: 
-            # print("Calling APPI",self.payload)
             api_response = self._api_client.create_namespaced_job(self.namespace_name,body=self.payload)
-            # print("Attained API Response")
-            # print(api_response)
-            job_id = api_response.metadata.uid
+            # $ Returning from within try to ensure There was correct Response
+            job = RunningKubeJob(self._client,self.name,self.namespace_name)
+            return job.update()
         except ApiException as e:
+            # $ (TODO) : TEST AND CHECK IF THE EXCEPTION BEING RAISED IS APPROPRIATEDLY CAUGHT
             print(e)
             raise KubeJobException("Exception when calling API: %s\n" % e)
             return None
 
-        
-        # $ TODO :  Return the Job From here. 
-        job = RunningKubeJob(self._client,self.name,self.namespace_name)
-        return job.update()
 
     def parameter(self,key, value):
         self.params.append({key:value})
         return self
 
+    # $ (TODO) : Need to handle really long Job Names
     def job_name(self, job_name):
         self.payload.metadata.name = job_name
-        self.name = job_name # TODO : Need to handle really long Job Names
+        self.name = job_name 
 
+        return self
+
+    # $ (TODO) : TEST THIS FUNCTION HERER.. 
+    def meta_data_label(self,key,value):
+        self.payload.metadata.labels[key] = value
         return self
 
     def namespace(self,namespace_name):
@@ -151,7 +155,7 @@ class KubeJob(object):
         self.container.resources.requests['memory'] = str(mem)+"Mi"
         return self
 
-    # THIS WILL COME LATER
+    # $ (TODO) : CONFIGURE GPU RELATED STUFF HERE
     def gpu(self, gpu):
         if not (isinstance(gpu, (int, unicode, basestring))):
             raise KubeJobException(
@@ -164,6 +168,7 @@ class KubeJob(object):
         self.env_list.append(kube_client.V1EnvVar(name=name,value=value))
         return self
 
+    # $ (TODO) : CHECK JOB CONFIGS TO SEE HOW LONG TO PERSIST A JOB AFTER COMPLETION/FAILURE
     def timeout_in_secs(self, timeout_in_secs):
         # self.
         # self.payload['timeout']['attemptDurationSeconds'] = timeout_in_secs
@@ -208,7 +213,7 @@ class KubeJobSpec(object):
             data = self._batch_api_client.read_namespaced_job(self.name,self.namespace)
             # print("API RESPONSE IS HERE")
         except ApiException as e :
-            # raise KubeJobException('Execption Calling Kube API %s' % e)
+            # $ (TODO) : FIND A GOOD WAY TO HANDLE EXCEPTIONS HERE. 
             return 
         self._apply(data)
 
@@ -217,6 +222,7 @@ class KubeJobSpec(object):
         return self
     
     @property
+    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
     def id(self): # ! NEED TO CHECK IF THIS SHOULD BE DONE OR NOT.
         if self.info == {}:
             return None
@@ -228,6 +234,7 @@ class KubeJobSpec(object):
 
     @property
     def job_name(self):
+    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         if self.info == {}:
             return None
         return self.info.metadata.name
@@ -244,7 +251,8 @@ class KubeJobSpec(object):
             return 'FAILED'
         else:
             return 'UNKNOWN_STATUS'
-        
+    
+    # $ TODO : Add Metadata Labels As a Property. 
 
     @property
     def status_reason(self):
@@ -252,12 +260,14 @@ class KubeJobSpec(object):
 
     @property
     def created_at(self):
+    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         if self.info == {}:
             return None
         return self.info.status.start_time
 
     @property
     def is_done(self):
+    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         if self.info == {}:
             return False
         if self.info.status.completion_time is None:
@@ -266,6 +276,7 @@ class KubeJobSpec(object):
 
     @property
     def is_running(self):
+    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         if self.info == {}:
             return False
         if self.info.status.active == 1:
@@ -274,12 +285,14 @@ class KubeJobSpec(object):
 
     @property
     def is_successful(self):
+    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         if self.info == {}:
             return False
         return self.info.status.succeeded is not None
 
     @property
     def is_crashed(self):
+    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         if self.info == {}:
             return False
         # TODO: Check statusmessage to find if the job crashed instead of failing
@@ -287,6 +300,7 @@ class KubeJobSpec(object):
 
     @property
     def reason(self):
+    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         if self.info == {}:
             return ''
         reason = []
@@ -339,7 +353,7 @@ class RunningKubeJob(KubeJobSpec):
             
 
     def kill(self):
-        # TODO : need to Fix This. 
+        # $ (TODO) : TEST THIS FUNCTION TO CHECK IF THE DELETE IS HAPPENING PROPERLY 
         if not self.is_done:
-            self._batch_api_client.delete_namespaced_job(self.job_name,self.namespace)
+            self._batch_api_client.delete_namespaced_job(self.name,self.namespace)
         return self.update()

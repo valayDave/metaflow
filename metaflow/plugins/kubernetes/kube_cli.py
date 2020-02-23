@@ -142,6 +142,7 @@ def kill(ctx, run_id, user, my_runs):
     "--tag", multiple=True, default=None, help="Passed to the top-level 'step'."
 )
 @click.option("--namespace", default=None, help="Passed to the top-level 'step'.")
+@click.option("--kube_namespace", default=None, help="Name Space to use on Kubernetes. This is not a metaflow namespace")
 @click.option("--retry-count", default=0, help="Passed to the top-level 'step'.")
 @click.option(
     "--max-user-code-retries", default=0, help="Passed to the top-level 'step'."
@@ -163,6 +164,7 @@ def step(
     gpu=None,
     memory=None,
     run_time_limit=None,
+    kube_namespace=None,
     **kwargs
 ):
     def echo(batch_id, msg, stream=sys.stdout):
@@ -247,6 +249,7 @@ def step(
                 cpu=cpu,
                 gpu=gpu,
                 memory=memory,
+                kube_namespace=kube_namespace,
                 run_time_limit=run_time_limit,
                 env=env,
                 attrs=attrs,
