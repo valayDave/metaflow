@@ -820,7 +820,6 @@ class Worker(object):
         # by read_logline() below that relies on readline() not blocking
         # print('running', args)
         cmdline = args.get_args()
-        self.task.logger.info('CLI Args:',cmdline)
         debug.subcommand_exec(cmdline)
         # ? HOW DOES METAFLOW EXECUTE STEPS OF FLOW ?
         # $ Constructing CLI Args and Running them as Subprocesses. 

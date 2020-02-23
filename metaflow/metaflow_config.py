@@ -170,8 +170,7 @@ KUBE_CONFIG_FILE_PATH = from_conf('METAFLOW_KUBE_CONFIG_PATH','~/.kube/config')
 
 def get_kubernetes_client():
     from kubernetes import config
-    
-    Kube_Configured_Api_Client = config.load_kube_config(config_file=KUBE_CONFIG_FILE_PATH)
+    Kube_Configured_Api_Client = config.new_client_from_config(config_file=KUBE_CONFIG_FILE_PATH)
     return Kube_Configured_Api_Client
     
 

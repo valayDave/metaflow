@@ -94,7 +94,7 @@ class Kube(object):
                         % (job.job_name,job.id, repr(e))
                     )
         else:
-            echo('No running Batch jobs found.')
+            echo('No running Kube jobs found.')
 
     def launch_job(
         self,
@@ -104,8 +104,6 @@ class Kube(object):
         code_package_url,
         code_package_ds,
         image,
-        queue,
-        iam_role=None,
         cpu=None,
         gpu=None,
         memory=None,
@@ -123,6 +121,7 @@ class Kube(object):
         )
         # $ NOTE : Currently No Queues for Kubernetes Implementation
         job = self._client.job()
+
         job \
             .job_name(job_name) \
             .command(
@@ -143,9 +142,10 @@ class Kube(object):
             .environment_variable('METAFLOW_DATASTORE_SYSROOT_S3', DATASTORE_SYSROOT_S3) \
             .environment_variable('METAFLOW_DATATOOLS_S3ROOT', DATATOOLS_S3ROOT) \
             .environment_variable('METAFLOW_DEFAULT_DATASTORE', 's3') \
-            .environment_variable('METAFLOW_DEFAULT_METADATA', DEFAULT_METADATA)
+            .environment_variable('METAFLOW_DEFAULT_METADATA', DEFAULT_METADATA)\
+            .namespace('user:'+attrs['metaflow.user'])
             # $ TODO : Set the AWS Keys based Kube Secret references here. 
-
+            
         for name, value in env.items():
             job.environment_variable(name, value)
         for name, value in self.metadata.get_runtime_environment('kube').items():

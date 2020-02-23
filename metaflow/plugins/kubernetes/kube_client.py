@@ -58,15 +58,14 @@ class KubeJob(object):
         self.payload.status = kube_client.V1JobStatus()
         self.namespace_name = None
         self.name = None
-        self.template = kube_client.V1PodTemplate()
-        self.template.tempate = kube_client.V1PodTemplateSpec()
-        self.template.tempate.spec = client.V1PodSpec()
+        # self.template = kube_client.V1PodTemplate()
+        self.template = kube_client.V1PodTemplateSpec()
         self.env_list = []
+        self.params = []
         self._image = None
         self.container = kube_client.V1Container(name='metaflow-job') 
-        self.command = None # $ Need to figure how to structure this properly. 
-        self.container.resources.limits.cpu = MAX_CPU*1000+"m" # $ NOTE: Currently Setting Hard Limits. Will Change Later
-        self.container.resources.limits.memory = MAX_MEMORY+"Mi" # $ NOTE: Currently Setting Hard Limits. Will Change Later
+        self.command_value = None # $ Need to figure how to structure this properly. 
+        self.container.resources = kube_client.V1ResourceRequirements(limits={'cpu':str(MAX_CPU*1000)+"m",'memory':str(MAX_MEMORY)+"Mi"},requests={}) # $ NOTE: Currently Setting Hard Limits. Will Change Later
 
 
     def execute(self):
@@ -83,12 +82,20 @@ class KubeJob(object):
             raise KubeJobException("Unable to launch Kubernetes Job Without Namespace.")
 
         self.container.image = self._image
+        self.container.command = self.command_value[0]
+        self.container.args = self.command_value[1:]
         self.container.env = self.env_list
-        self.template.template.spec.containers = [self.container]
-        self.payload.spec = kube_client.V1JobSpec(ttl_seconds_after_finished=600, template=self.template.template)
+
+        self.template.spec = kube_client.V1PodSpec(containers=[self.container],restart_policy='Never')
+        print("Parameters :")
+        self.payload.spec = kube_client.V1JobSpec(ttl_seconds_after_finished=600, template=self.template)
+        print(str(self.payload))
         try: 
-            api_response = self._api_client.create_namespaced_job(self.namespace,self.payload)
-            job_id = api_response['metadata']['uid']
+            # print("Calling APPI",self.payload)
+            api_response = self._api_client.create_namespaced_job(self.namespace,body=self.payload)
+            print("Attained API Response")
+            print(api_response)
+            job_id = api_response.metadata.uid
         except ApiException as e:
             KubeJobException("Exception when calling API: %s\n" % e)
 
@@ -96,6 +103,10 @@ class KubeJob(object):
         # $ TODO :  Return the Job From here. 
         job = RunningKubeJob(self._client,self.name,self.namespace)
         return job.update()
+
+    def parameter(self,key, value):
+        self.params.append({key:value})
+        return self
 
     def job_name(self, job_name):
         self.payload.metadata.name = job_name
@@ -119,22 +130,23 @@ class KubeJob(object):
     def command(self, command):
         if not isinstance(command,list) :
             raise KubeJobException("Invalid Command Type. Needs to be Of Type List but got {}".format(type(command)))
-        self.container.command = command
+        # self.container.command = command
+        self.command_value = command
         return self
 
     def cpu(self, cpu):
         if not (isinstance(cpu, (int, unicode, basestring)) and int(cpu) > 0):
             raise KubeJobException(
                 'Invalid CPU value ({}); it should be greater than 0'.format(cpu))
-        
-        self.container.resources.requests.cpu = int(cpu)*1000+"m"
+        print("Dead by CPU")
+        self.container.resources.requests['cpu'] = str(int(cpu)*1000)+"m"
         return self
 
     def memory(self, mem):
         if not (isinstance(mem, (int, unicode, basestring)) and int(mem) > 0):
             raise KubeJobException(
                 'Invalid memory value ({}); it should be greater than 0'.format(mem))
-        self.container.resources.requests.memory = int(mem)+"Mi"
+        self.container.resources.requests['memory'] = str(mem)+"Mi"
         return self
 
     # THIS WILL COME LATER
@@ -151,7 +163,8 @@ class KubeJob(object):
         return self
 
     def timeout_in_secs(self, timeout_in_secs):
-        self.payload['timeout']['attemptDurationSeconds'] = timeout_in_secs
+        # self.
+        # self.payload['timeout']['attemptDurationSeconds'] = timeout_in_secs
         return self
 
 
