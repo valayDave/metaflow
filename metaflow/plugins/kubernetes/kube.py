@@ -6,6 +6,8 @@ import atexit
 import shlex
 import time
 import warnings
+import uuid
+
 
 from requests.exceptions import HTTPError
 from metaflow.exception import MetaflowException, MetaflowInternalError
@@ -58,14 +60,19 @@ class Kube(object):
         return jobs
 
     def _job_name(self, user, flow_name, run_id, step_name, task_id, retry_count):
-        return '{user}-{flow_name}-{run_id}-{step_name}-{task_id}-{retry_count}'.format(
+        lowercase_str = uuid.uuid4().hex[:6]  
+        # ! : NAME GENERATION IS AN ISSUE. Name can only be as Long as 65 Chars. 
+        curr_name = '{user}-{flow_name}-{run_id}-{step_name}-{task_id}-{retry_count}'.format(
             user=str.lower(user),
-            flow_name=str.lower(flow_name),
+            flow_name=str.lower(lowercase_str),
             run_id=run_id,
             step_name=str.lower(step_name),
             task_id=task_id,
             retry_count=retry_count,
-        )
+        ) # $ This is a little hacky at the moment. Needs more debugging. 
+        curr_name = curr_name.replace('_','-')
+        # if len(curr_name) > 65:
+        return curr_name
 
     def list_jobs(self, flow_name, run_id, user, echo):
         jobs = self._search_jobs(flow_name, run_id, user)
@@ -158,7 +165,11 @@ class Kube(object):
         if attrs:
             for key, value in attrs.items():
                 job.parameter(key, value)
-        self.job = job.execute()
+        executing_job = job.execute()
+        if executing_job is None:
+            raise KubeException('Exception Creating Kubenetes Job')
+        
+        self.job = executing_job
 
 
     def wait(self, echo=None):

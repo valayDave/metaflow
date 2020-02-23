@@ -98,7 +98,8 @@ class KubeJob(object):
             job_id = api_response.metadata.uid
         except ApiException as e:
             print(e)
-            KubeJobException("Exception when calling API: %s\n" % e)
+            raise KubeJobException("Exception when calling API: %s\n" % e)
+            return None
 
         
         # $ TODO :  Return the Job From here. 
@@ -111,7 +112,8 @@ class KubeJob(object):
 
     def job_name(self, job_name):
         self.payload.metadata.name = job_name
-        self.name = job_name
+        self.name = job_name # TODO : Need to handle really long Job Names
+
         return self
 
     def namespace(self,namespace_name):
@@ -190,7 +192,7 @@ class KubeJobSpec(object):
         self.name = job_name
         self.namespace = namespace
         self._data = {}
-        self.update()
+        self = self.update()
 
     def __repr__(self):
         return '{}(\'{}\')'.format(self.__class__.__name__, self._id)
@@ -215,7 +217,9 @@ class KubeJobSpec(object):
         return self
     
     @property
-    def id(self):
+    def id(self): # ! NEED TO CHECK IF THIS SHOULD BE DONE OR NOT.
+        if self.info == {}:
+            return None
         return self.info.metadata.uid
 
     @property
@@ -224,6 +228,8 @@ class KubeJobSpec(object):
 
     @property
     def job_name(self):
+        if self.info == {}:
+            return None
         return self.info.metadata.name
 
     @property
@@ -246,31 +252,43 @@ class KubeJobSpec(object):
 
     @property
     def created_at(self):
+        if self.info == {}:
+            return None
         return self.info.status.start_time
 
     @property
     def is_done(self):
+        if self.info == {}:
+            return False
         if self.info.status.completion_time is None:
             self.update()
         return self.info.status.completion_time is not None
 
     @property
     def is_running(self):
+        if self.info == {}:
+            return False
         if self.info.status.active == 1:
             self.update()
         return self.info.status.active == 1
 
     @property
     def is_successful(self):
+        if self.info == {}:
+            return False
         return self.info.status.succeeded is not None
 
     @property
     def is_crashed(self):
+        if self.info == {}:
+            return False
         # TODO: Check statusmessage to find if the job crashed instead of failing
         return self.info.status.failed is not None
 
     @property
     def reason(self):
+        if self.info == {}:
+            return ''
         reason = []
         if self.info.status.conditions is not None:
             for obj in self.info.status.conditions:
@@ -321,6 +339,7 @@ class RunningKubeJob(KubeJobSpec):
             
 
     def kill(self):
+        # TODO : need to Fix This. 
         if not self.is_done:
             self._batch_api_client.delete_namespaced_job(self.job_name,self.namespace)
         return self.update()
