@@ -11,7 +11,7 @@ from requests.exceptions import HTTPError
 from metaflow.exception import MetaflowException, MetaflowInternalError
 from metaflow.metaflow_config import BATCH_METADATA_SERVICE_URL, DATATOOLS_S3ROOT, \
     DATASTORE_LOCAL_DIR, DATASTORE_SYSROOT_S3, DEFAULT_METADATA, \
-    BATCH_METADATA_SERVICE_HEADERS
+    BATCH_METADATA_SERVICE_HEADERS , AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, AWS_SESSION_TOKEN, AWS_DEFAULT_REGION
 from metaflow import util
 
 from .kube_client import KubeClient
@@ -37,6 +37,8 @@ class Kube(object):
     # $ The package is 
     def _command(self, code_package_url, environment, step_name, step_cli):
         cmds = environment.get_package_commands(code_package_url)
+        cmds.extend(["%s -m pip install kubernetes \
+                    --user -qqq" % environment._python()])
         cmds.extend(environment.bootstrap_commands(step_name))
         cmds.append("echo 'Task is starting.'")
         cmds.extend(step_cli)
@@ -44,10 +46,10 @@ class Kube(object):
 
     def _search_jobs(self, flow_name, run_id, user):
         if user is None:
-            regex = '-{flow_name}-{run_id}-'.format(flow_name=flow_name, run_id=run_id)
+            regex = '-{flow_name}-{run_id}-'.format(flow_name=str.lower(flow_name), run_id=run_id)
         else:
             regex = '{user}-{flow_name}-{run_id}-'.format(
-                user=user, flow_name=flow_name, run_id=run_id
+                user=str.lower(user), flow_name=str.lower(flow_name), run_id=run_id
             )
         jobs = []
         for job in self._client.unfinished_jobs():
@@ -57,10 +59,10 @@ class Kube(object):
 
     def _job_name(self, user, flow_name, run_id, step_name, task_id, retry_count):
         return '{user}-{flow_name}-{run_id}-{step_name}-{task_id}-{retry_count}'.format(
-            user=user,
-            flow_name=flow_name,
+            user=str.lower(user),
+            flow_name=str.lower(flow_name),
             run_id=run_id,
-            step_name=step_name,
+            step_name=str.lower(step_name),
             task_id=task_id,
             retry_count=retry_count,
         )
@@ -142,8 +144,11 @@ class Kube(object):
             .environment_variable('METAFLOW_DATASTORE_SYSROOT_S3', DATASTORE_SYSROOT_S3) \
             .environment_variable('METAFLOW_DATATOOLS_S3ROOT', DATATOOLS_S3ROOT) \
             .environment_variable('METAFLOW_DEFAULT_DATASTORE', 's3') \
-            .environment_variable('METAFLOW_DEFAULT_METADATA', DEFAULT_METADATA)\
-            .namespace('user:'+attrs['metaflow.user'])
+            .environment_variable('AWS_ACCESS_KEY_ID', AWS_ACCESS_KEY_ID) \
+            .environment_variable('AWS_SECRET_ACCESS_KEY', AWS_SECRET_ACCESS_KEY) \
+            .environment_variable('AWS_SESSION_TOKEN', AWS_SESSION_TOKEN) \
+            .environment_variable('AWS_DEFAULT_REGION', AWS_DEFAULT_REGION) \
+            .namespace('default') # ! NEED TO MAKE THIS BRING THIS FROM ENV VAR
             # $ TODO : Set the AWS Keys based Kube Secret references here. 
             
         for name, value in env.items():
@@ -184,13 +189,19 @@ class Kube(object):
         # $ TODO : This may have issues. Check this During Time of Execution. 
         wait_for_launch(self.job)
         logs = self.job.logs()
+        
         while True:
             logs, finished, = print_all(logs)
             if finished:
+                # select.poll().poll(500) # ! This is a little hacky . Need to have better soln.
                 break
             else:
                 select.poll().poll(500)
-
+        
+        while True:
+            if self.job.is_done or self.job.is_crashed:
+                break
+        
         if self.job.is_crashed:
             if self.job.reason:
                 raise KubeException(
@@ -209,5 +220,5 @@ class Kube(object):
                 raise KubeException("Task failed!")
             echo(
                 self.job.id,
-                'Task finished with exit code %s.' % self.job.status_code
+                'Task finished with status %s.' % self.job.status
             )

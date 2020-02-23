@@ -3,6 +3,7 @@ import select
 import sys
 import time
 import hashlib
+import datetime
 
 try:
     unicode
@@ -32,6 +33,7 @@ class KubeClient(object):
         :return: [tuple with KubeJobSpec Objects]
         :rtype: [Tuple(KubeJobSpec)]
         """
+        # ! NAMESPACES NEED TO BE FIXED. NEED TO DECLARE AN ENV VAR FOR MY Kubernetes EVN. 
         from metaflow.client import get_namespace
         # $ FIGURE KUBE API To Check and Find whichever Jobs are Active,
         jobs = kube_client.BatchV1Api(self._client).list_namespaced_job(get_namespace(),include_uninitialized=False,timeout_seconds=60)
@@ -82,26 +84,25 @@ class KubeJob(object):
             raise KubeJobException("Unable to launch Kubernetes Job Without Namespace.")
 
         self.container.image = self._image
-        self.container.command = self.command_value[0]
+        self.container.command = [self.command_value[0]]
         self.container.args = self.command_value[1:]
         self.container.env = self.env_list
 
         self.template.spec = kube_client.V1PodSpec(containers=[self.container],restart_policy='Never')
-        print("Parameters :")
         self.payload.spec = kube_client.V1JobSpec(ttl_seconds_after_finished=600, template=self.template)
-        print(str(self.payload))
         try: 
             # print("Calling APPI",self.payload)
-            api_response = self._api_client.create_namespaced_job(self.namespace,body=self.payload)
-            print("Attained API Response")
-            print(api_response)
+            api_response = self._api_client.create_namespaced_job(self.namespace_name,body=self.payload)
+            # print("Attained API Response")
+            # print(api_response)
             job_id = api_response.metadata.uid
         except ApiException as e:
+            print(e)
             KubeJobException("Exception when calling API: %s\n" % e)
 
         
         # $ TODO :  Return the Job From here. 
-        job = RunningKubeJob(self._client,self.name,self.namespace)
+        job = RunningKubeJob(self._client,self.name,self.namespace_name)
         return job.update()
 
     def parameter(self,key, value):
@@ -138,7 +139,6 @@ class KubeJob(object):
         if not (isinstance(cpu, (int, unicode, basestring)) and int(cpu) > 0):
             raise KubeJobException(
                 'Invalid CPU value ({}); it should be greater than 0'.format(cpu))
-        print("Dead by CPU")
         self.container.resources.requests['cpu'] = str(int(cpu)*1000)+"m"
         return self
 
@@ -187,22 +187,27 @@ class KubeJobSpec(object):
         super().__init__()
         self._client = client
         self._batch_api_client = kube_client.BatchV1Api(client)
-        self.job_name = job_name
+        self.name = job_name
         self.namespace = namespace
         self._data = {}
+        self.update()
+
     def __repr__(self):
         return '{}(\'{}\')'.format(self.__class__.__name__, self._id)
 
     def _apply(self, data):
         self._data = data
 
-    @limit(1)
+    @limit(0.2)
     def _update(self):
         try:
             # https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/BatchV1Api.md#read_namespaced_job
-            data = self._batch_api_client.read_namespaced_job(self.job_name,self.namespace)
+            # print("getting data for ",self.name,self.namespace)
+            data = self._batch_api_client.read_namespaced_job(self.name,self.namespace)
+            # print("API RESPONSE IS HERE")
         except ApiException as e :
-            return
+            # raise KubeJobException('Execption Calling Kube API %s' % e)
+            return 
         self._apply(data)
 
     def update(self):
@@ -215,8 +220,6 @@ class KubeJobSpec(object):
 
     @property
     def info(self):
-        if not self._data:
-            self.update()
         return self._data
 
     @property
@@ -249,10 +252,12 @@ class KubeJobSpec(object):
     def is_done(self):
         if self.info.status.completion_time is None:
             self.update()
-        return self.info.status.completion_time is None
+        return self.info.status.completion_time is not None
 
     @property
     def is_running(self):
+        if self.info.status.active == 1:
+            self.update()
         return self.info.status.active == 1
 
     @property
@@ -291,9 +296,13 @@ class RunningKubeJob(KubeJobSpec):
         # There is no Need to check if the job is in runnable state as the Job will be runnnig on Kube
         watcher = watch.Watch()
         for i in range(self.NUM_RETRIES):
+            if self.is_done:
+                break
             try:
                 check_after_done = 0
+                # last_call = time()
                 for line in watcher.stream(kube_client.CoreV1Api(self._client).read_namespaced_pod_log, name=pod_name, namespace=self.namespace):
+                    # start_time = datetime.datetime.now()
                     if not line:
                         if self.is_done:
                             if check_after_done > 1:
@@ -303,11 +312,13 @@ class RunningKubeJob(KubeJobSpec):
                             pass
                     else:
                         yield line
+                break # Because this is a generator, we want to break out here because this means that we are done printing all logs. 
             except Exception as ex:
                 if self.is_crashed:
                     break
-                sys.stderr.write(repr(ex))
+                # sys.stderr.write('Except : '+str(i))
                 time.sleep(2 ** i)
+            
 
     def kill(self):
         if not self.is_done:
