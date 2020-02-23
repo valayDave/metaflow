@@ -62,13 +62,13 @@ class KubeDecorator(StepDecorator):
     Step decorator to specify that this step should execute on Batch.
 
     This decorator indicates that your step should execute on Batch. Note that you can
-    apply this decorator automatically to all steps using the ```--with batch``` argument
+    apply this decorator automatically to all steps using the ```--with kube``` argument
     when calling run. Step level decorators are overrides and will force a step to execute
     on Batch regardless of the ```--with``` specification.
 
     To use, annotate your step as follows:
     ```
-    @batch
+    @kube
     @step
     def myStep(self):
         ...
@@ -129,7 +129,7 @@ class KubeDecorator(StepDecorator):
         for deco in decos:
             if isinstance(deco, ResourcesDecorator):
                 for k, v in deco.attributes.items():
-                    # we use the larger of @resources and @batch attributes
+                    # we use the larger of @resources and @kube attributes
                     my_val = self.attributes.get(k)
                     if not (my_val is None and v is None):
                         self.attributes[k] = str(max(int(my_val or 0), int(v or 0)))

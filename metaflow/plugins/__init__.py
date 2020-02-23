@@ -8,9 +8,11 @@ def get_plugin_cli():
     # Add new CLI commands in this list
     from . import package_cli
     from .aws.batch import batch_cli
+    from .kubernetes import kube_cli
 
     return [package_cli.cli,
-            batch_cli.cli]
+            batch_cli.cli,
+            kube_cli.cli]
 
 # Add new decorators in this list
 from .catch_decorator import CatchDecorator
