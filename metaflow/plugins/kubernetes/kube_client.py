@@ -152,10 +152,11 @@ class KubeJob(object):
         return self
 
     def cpu(self, cpu):
-        if not (isinstance(cpu, (int, unicode, basestring)) and int(cpu) > 0):
+        # $ Allow floating point values for CPU. 
+        if not (isinstance(cpu, (float, unicode, basestring)) and float(cpu) > 0):
             raise KubeJobException(
                 'Invalid CPU value ({}); it should be greater than 0'.format(cpu))
-        self.container.resources.requests['cpu'] = str(int(cpu)*1000)+"m"
+        self.container.resources.requests['cpu'] = str(float(cpu)*1000)+"m" 
         return self
 
     def memory(self, mem):
