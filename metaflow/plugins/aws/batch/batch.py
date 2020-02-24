@@ -38,6 +38,9 @@ class Batch(object):
     def _command(self, code_package_url, environment, step_name, step_cli):
         cmds = environment.get_package_commands(code_package_url)
         cmds.extend(environment.bootstrap_commands(step_name))
+        # ! THIS IS TEMPORARY! CANNOT BE GENERALISED 
+        cmds.extend(["%s -m pip install kubernetes \
+                    --user -qqq" % environment._python()])
         cmds.append("echo 'Task is starting.'")
         cmds.extend(step_cli)
         return shlex.split('/bin/sh -c "%s"' % " && ".join(cmds))

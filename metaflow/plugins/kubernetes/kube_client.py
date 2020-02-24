@@ -12,7 +12,7 @@ except NameError:
     basestring = str
 
 from metaflow.exception import MetaflowException
-from metaflow.metaflow_config import get_kubernetes_client
+from metaflow.metaflow_config import get_kubernetes_client,KUBE_NAMESPACE
 
 import kubernetes.client as kube_client
 from kubernetes import watch
@@ -35,10 +35,9 @@ class KubeClient(object):
         """
         # $ (TODO) : NAMESPACE NEEDS TO COME FROM ENV VAR. 
         # ! NAMESPACES NEED TO BE FIXED. NEED TO DECLARE AN ENV VAR FOR MY Kubernetes EVN. 
-        from metaflow.client import get_namespace
         # $ Get the Jobs.
-        jobs = kube_client.BatchV1Api(self._client).list_namespaced_job(get_namespace(),include_uninitialized=False,timeout_seconds=60)
-        return (KubeJobSpec(self._client,job.metadata.name,job.metadata.namespace) for job in jobs.items if job.status.active is not None)
+        jobs = kube_client.BatchV1Api(self._client).list_namespaced_job(KUBE_NAMESPACE,include_uninitialized=False,timeout_seconds=60)
+        return (KubeJobSpec(self._client,job.metadata.name,job.metadata.namespace).update() for job in jobs.items if job.status.active is not None)
 
     def job(self):
         return KubeJob(self._client)
@@ -52,13 +51,24 @@ class KubeJobException(MetaflowException):
     headline = 'Kube job error'
 
 
+class KubeJobSpecException(MetaflowException):
+    headline = 'Kube job Exception'
+
 class KubeJob(object):
+    """KubeJob [summary]
+    
+    :param object: [description]
+    :type object: [type]
+    :raises KubeJobException: [description]
+    :return: [description]
+    :rtype: [type]
+    """
     def __init__(self, client):
         self._client = client
         self._api_client = kube_client.BatchV1Api(client)
         self.payload = kube_client.V1Job(api_version="batch/v1", kind="Job")
         self.payload.metadata = kube_client.V1ObjectMeta()
-        self.payload.metadata.labels = []
+        self.payload.metadata.labels = dict()
         self.payload.status = kube_client.V1JobStatus()
         self.namespace_name = None
         self.name = None
@@ -190,42 +200,63 @@ class limit(object):
 
 
 class KubeJobSpec(object):
-    def __init__(self,client,job_name,namespace):
+    """KubeJobSpec 
+    The purpose if this class is to bind with Job Related highlevel object will API's of Kubernetes.
+    This binds the object to job name and namespace. running the KubeJobSpec().update() will update the object 
+    with the latest observations from Kubernetes. The updates are stored in the _data property. We use properties of a 
+    job such as 'id','job_name','status','created_at', 'is_done' etc as high level abstractions to what the Object that kubernetes
+    api returns. We achieve this using @property decorator.
+    
+    Parameter Behaviour : 
+
+    'update_once' : 
+        If True:
+            Will ensure that the bound Object will only update once. During updation, if there is failure the job will raise 
+            an exception. 
+
+        If False:
+            It will update When ever some property requires it to be called. such as 'is_done', 'is_running',
+    
+    :raises KubeJobSpecException: If bound API Fails it will raise Exception. 
+    """
+    def __init__(self,client,job_name,namespace,update_once=True):
         super().__init__()
         self._client = client
         self._batch_api_client = kube_client.BatchV1Api(client)
         self.name = job_name
+        self.updated = False
+        self.update_once = update_once
         self.namespace = namespace
-        self._data = {}
-        self = self.update()
 
     def __repr__(self):
         return '{}(\'{}\')'.format(self.__class__.__name__, self._id)
 
     def _apply(self, data):
+        self.updated = True
         self._data = data
 
-    @limit(0.2)
+    @limit(1)
     def _update(self):
         try:
-            # https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/BatchV1Api.md#read_namespaced_job
+            # $ https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/BatchV1Api.md#read_namespaced_job
             # print("getting data for ",self.name,self.namespace)
             data = self._batch_api_client.read_namespaced_job(self.name,self.namespace)
             # print("API RESPONSE IS HERE")
         except ApiException as e :
-            # $ (TODO) : FIND A GOOD WAY TO HANDLE EXCEPTIONS HERE. 
+            if self.update_once:
+                # $ (TODO) : See if this is a good Way of Managing Exceptions. Should update_once be allowed to keep api Exceptions
+                raise KubeJobSpecException('Error in read_namespaced_job API %s'%str(e))
             return 
         self._apply(data)
 
     def update(self):
-        self._update()
+        if not self.updated or not self.update_once:
+            self._update()
         return self
     
     @property
     # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
     def id(self): # ! NEED TO CHECK IF THIS SHOULD BE DONE OR NOT.
-        if self.info == {}:
-            return None
         return self.info.metadata.uid
 
     @property
@@ -235,14 +266,14 @@ class KubeJobSpec(object):
     @property
     def job_name(self):
     # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
-        if self.info == {}:
-            return None
         return self.info.metadata.name
+    
+    @property
+    def labels(self):
+        return self.info.metadata.labels
 
     @property
     def status(self):
-        if not self.is_done:
-            self.update()
         if self.is_running:
             return 'RUNNING'
         elif self.is_successful:
@@ -261,15 +292,11 @@ class KubeJobSpec(object):
     @property
     def created_at(self):
     # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
-        if self.info == {}:
-            return None
         return self.info.status.start_time
 
     @property
     def is_done(self):
     # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
-        if self.info == {}:
-            return False
         if self.info.status.completion_time is None:
             self.update()
         return self.info.status.completion_time is not None
@@ -277,8 +304,6 @@ class KubeJobSpec(object):
     @property
     def is_running(self):
     # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
-        if self.info == {}:
-            return False
         if self.info.status.active == 1:
             self.update()
         return self.info.status.active == 1
@@ -286,23 +311,17 @@ class KubeJobSpec(object):
     @property
     def is_successful(self):
     # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
-        if self.info == {}:
-            return False
         return self.info.status.succeeded is not None
 
     @property
     def is_crashed(self):
     # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
-        if self.info == {}:
-            return False
         # TODO: Check statusmessage to find if the job crashed instead of failing
         return self.info.status.failed is not None
 
     @property
     def reason(self):
     # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
-        if self.info == {}:
-            return ''
         reason = []
         if self.info.status.conditions is not None:
             for obj in self.info.status.conditions:
@@ -317,12 +336,12 @@ class RunningKubeJob(KubeJobSpec):
 
     NUM_RETRIES = 5
 
-    def __init__(self, client, job_name, namespace):
-        super().__init__(client, job_name, namespace)
+    def __init__(self, client, job_name, namespace, update_once=False):
+        super().__init__(client, job_name, namespace, update_once=update_once)
 
     # $ https://stackoverflow.com/questions/56124320/how-to-get-log-and-describe-of-pods-in-kubernetes-by-python-client
     def logs(self):
-        pod_label_selector = "controller-uid=" + self.info.metadata.labels.get('controller-uid')
+        pod_label_selector = "controller-uid=" + self.info.spec.template.metadata.labels.get('controller-uid')
         pods_list = kube_client.CoreV1Api(self._client).list_namespaced_pod(self.namespace,label_selector=pod_label_selector, timeout_seconds=10)
         pod_name = pods_list.items[0].metadata.name
         # There is no Need to check if the job is in runnable state as the Job will be runnnig on Kube

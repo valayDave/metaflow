@@ -6,7 +6,8 @@ import atexit
 import shlex
 import time
 import warnings
-import uuid
+import hashlib
+
 
 
 from requests.exceptions import HTTPError
@@ -47,31 +48,35 @@ class Kube(object):
         return shlex.split('/bin/sh -c "%s"' % " && ".join(cmds))
 
     def _search_jobs(self, flow_name, run_id, user): # $ (TODO) : TEST THIS FUNCTION AFTER NAMING CHANGE
+        item_set = set()
         if user is None:
-            regex = '-{flow_name}-{run_id}-'.format(
-                flow_name=str.lower(flow_name), run_id=run_id)
+            item_set = {('flow_name',str.lower(flow_name)),('run_id',run_id)}
         else:
-            regex = '{user}-{flow_name}-{run_id}-'.format(
-                user=str.lower(user), flow_name=str.lower(flow_name), run_id=run_id
-            )
+            item_set = {('flow_name',str.lower(flow_name)),('run_id',run_id),('user',user)}
         jobs = []
         for job in self._client.unfinished_jobs():
-            if regex in job.job_name:
+            # $ Use Labels to indentify jobs and thier executions. 
+            job_labels = dict(job.labels)
+            if set(job_labels).intersection(item_set) == item_set: 
                 jobs.append(job)
         return jobs
 
-    def _job_name(self, user, flow_name, run_id, step_name, task_id, retry_count): # $ (TODO) FIX NAMING PROBLEMS. Ask Questions in Community How to solve Naming Problem.
-        lowercase_str = uuid.uuid4().hex[:6]
-        # ! : NAME GENERATION IS AN ISSUE. Name can only be as Long as 65 Chars. :: https://stackoverflow.com/questions/50412837/kubernetes-label-name-63-character-limit
-        curr_name = '{user}-{flow_name}-{run_id}-{step_name}-{task_id}-{retry_count}'.format(
+    def _name_str(self, user, flow_name, run_id, step_name, task_id):
+        return '{user}-{flow_name}-{run_id}-{step_name}-{task_id}'.format(
             user=str.lower(user),
-            flow_name=str.lower(lowercase_str),
+            flow_name=str.lower(flow_name),
             run_id=run_id,
             step_name=str.lower(step_name),
-            task_id=task_id,
-            retry_count=retry_count,
-        )  # $ This is a little hacky at the moment. Needs more debugging.
-        curr_name = curr_name.replace('_', '-')
+            task_id=task_id
+            ) 
+
+    def _job_name(self, user, flow_name, run_id, step_name, task_id, retry_count): # $ (TODO) FIX NAMING PROBLEMS. Ask Questions in Community How to solve Naming Problem.
+        # ! : NAME GENERATION IS AN ISSUE. Name can only be as Long as 65 Chars. :: https://stackoverflow.com/questions/50412837/kubernetes-label-name-63-character-limit
+        curr_name = self._name_str(user, flow_name, run_id, step_name, task_id)
+
+        # $ SHA the CURR Name and 
+        curr_name = hashlib.sha224(curr_name.encode()).hexdigest()+'-'+retry_count
+
         # if len(curr_name) > 65:
         return curr_name
 
@@ -122,6 +127,7 @@ class Kube(object):
         env={},
         attrs={},
     ):
+        print("About to start Exec launch_job")
         job_name = self._job_name(
             attrs['metaflow.user'],
             attrs['metaflow.flow_name'],
@@ -132,7 +138,7 @@ class Kube(object):
         )
         # $ NOTE : Currently No Queues for Kubernetes Implementation
         job = self._client.job()
-
+        print("Created Job")
         job \
             .job_name(job_name) \
             .command(
@@ -153,18 +159,19 @@ class Kube(object):
             .environment_variable('METAFLOW_DATASTORE_SYSROOT_S3', DATASTORE_SYSROOT_S3) \
             .environment_variable('METAFLOW_DATATOOLS_S3ROOT', DATATOOLS_S3ROOT) \
             .environment_variable('METAFLOW_DEFAULT_DATASTORE', 's3') \
-            # $ (TODO) : Set the AWS Keys based Kube Secret references here.
             .environment_variable('AWS_ACCESS_KEY_ID', AWS_ACCESS_KEY_ID) \
             .environment_variable('AWS_SECRET_ACCESS_KEY', AWS_SECRET_ACCESS_KEY) \
             .environment_variable('AWS_SESSION_TOKEN', AWS_SESSION_TOKEN) \
             .environment_variable('AWS_DEFAULT_REGION', AWS_DEFAULT_REGION) \
-            .meta_data_label('RUN_ID', attrs['metaflow.run_id']) \
-            .meta_data_label('STEP_NAME', attrs['metaflow.step_name']) \
-            .meta_data_label('USER', attrs['metaflow.user']) \
-            .meta_data_label('FLOW_NAME', attrs['metaflow.flow_name']) \
-            .meta_data_label('TASK_ID', attrs['metaflow.task_id']) \
-            .meta_data_label('RETRY_COUNT', attrs['metaflow.retry_count']) \
+            .meta_data_label('run_id', attrs['metaflow.run_id']) \
+            .meta_data_label('step_name', attrs['metaflow.step_name']) \
+            .meta_data_label('user', attrs['metaflow.user']) \
+            .meta_data_label('flow_name', attrs['metaflow.flow_name']) \
+            .meta_data_label('task_id', attrs['metaflow.task_id']) \
+            .meta_data_label('retry_count', attrs['metaflow.retry_count']) \
             .namespace(kube_namespace)  # $ (TODO) NEED TO MAKE THIS BRING THIS FROM ENV VAR / FROM FUNCTION CALLER
+            # $ (TODO) : Set the AWS Keys based Kube Secret references here.
+            # $ (TODO) : Need to Fix the Lowering of the values in the string. 
 
         for name, value in env.items():
             job.environment_variable(name, value)
@@ -176,7 +183,6 @@ class Kube(object):
         executing_job = job.execute()
         if executing_job is None:
             raise KubeException('Exception Creating Kubenetes Job')
-
         self.job = executing_job
 
     def wait(self, echo=None):
@@ -204,8 +210,9 @@ class Kube(object):
                     return tail, False
             return tail, True
 
-        # $ (TODO) : This may have issues. Check this During Time of Execution.
         wait_for_launch(self.job)
+        
+        # $ (TODO) : This may have issues. Check this During Time of Execution.
         logs = self.job.logs()
 
         while True:
@@ -217,6 +224,7 @@ class Kube(object):
 
         while True:
             if self.job.is_done or self.job.is_crashed:
+                select.poll().poll(500)
                 break
 
         if self.job.is_crashed:
