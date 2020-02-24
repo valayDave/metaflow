@@ -178,7 +178,6 @@ class NativeRuntime(object):
         self._is_cloned[task.path] = task.is_cloned
 
     def execute(self):
-        # ! Called when we do python hello.py run --environment=conda 
         self._logger('Workflow starting (run-id %s):' % self._run_id,
                      system_msg=True)
 

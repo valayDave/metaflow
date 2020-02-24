@@ -152,10 +152,11 @@ class KubeJob(object):
         return self
 
     def cpu(self, cpu):
-        if not (isinstance(cpu, (int, unicode, basestring)) and int(cpu) > 0):
+        # $ Allow floating point values for CPU. 
+        if not (isinstance(cpu, (float, unicode, basestring)) and float(cpu) > 0):
             raise KubeJobException(
                 'Invalid CPU value ({}); it should be greater than 0'.format(cpu))
-        self.container.resources.requests['cpu'] = str(int(cpu)*1000)+"m"
+        self.container.resources.requests['cpu'] = str(float(cpu)*1000)+"m" 
         return self
 
     def memory(self, mem):
@@ -239,9 +240,7 @@ class KubeJobSpec(object):
     def _update(self):
         try:
             # $ https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/BatchV1Api.md#read_namespaced_job
-            # print("getting data for ",self.name,self.namespace)
             data = self._batch_api_client.read_namespaced_job(self.name,self.namespace)
-            # print("API RESPONSE IS HERE")
         except ApiException as e :
             if self.update_once:
                 # $ (TODO) : See if this is a good Way of Managing Exceptions. Should update_once be allowed to keep api Exceptions

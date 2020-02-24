@@ -177,7 +177,7 @@ class CondaStepDecorator(StepDecorator):
     # $ Explicitly sets linux-64 for batch. 
     def _architecture(self, decos):
         for deco in decos:
-            if deco.name == 'batch':
+            if deco.name == 'batch' or deco.name == 'kube':
                 # force conda resolution for linux-64 architectures
                 return 'linux-64'
         bit = '32'
@@ -227,7 +227,7 @@ class CondaStepDecorator(StepDecorator):
                                               type='conda_env_id')])
 
     def runtime_step_cli(self, cli_args, retry_count, max_user_code_retries):
-        if self.is_enabled() and 'batch' not in cli_args.commands:
+        if self.is_enabled() and 'batch' not in cli_args.commands and 'kube' not in cli_args.commands: 
             python_path = self.metaflow_home
             if os.environ.get('PYTHONPATH') is not None:
                 python_path = os.pathsep.join([os.environ['PYTHONPATH'], python_path])
