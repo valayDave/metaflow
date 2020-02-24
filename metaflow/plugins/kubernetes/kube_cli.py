@@ -237,7 +237,6 @@ def step(
         )
         time.sleep(minutes_between_retries * 60)
     kube = Kube(ctx.obj.metadata, ctx.obj.environment)
-    print("About to start Exec")
     try:
         with ctx.obj.monitor.measure("metaflow.kube.launch"):
             kube.launch_job(

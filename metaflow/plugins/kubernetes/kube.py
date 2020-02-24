@@ -127,7 +127,6 @@ class Kube(object):
         env={},
         attrs={},
     ):
-        print("About to start Exec launch_job")
         job_name = self._job_name(
             attrs['metaflow.user'],
             attrs['metaflow.flow_name'],
@@ -138,7 +137,6 @@ class Kube(object):
         )
         # $ NOTE : Currently No Queues for Kubernetes Implementation
         job = self._client.job()
-        print("Created Job")
         job \
             .job_name(job_name) \
             .command(

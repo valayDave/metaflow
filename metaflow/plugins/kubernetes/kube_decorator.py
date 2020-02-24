@@ -184,7 +184,6 @@ class KubeDecorator(StepDecorator):
                         MetaflowDataStore.filename_with_attempt_prefix(
                             'metadata.tgz', retry_count))
                     url = urlparse(path)
-                    print("File Uploaded To S3 !! Yeay")
                     s3.upload_fileobj(f, url.netloc, url.path.lstrip('/'))
 
     @classmethod
