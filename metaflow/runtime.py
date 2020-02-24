@@ -820,9 +820,6 @@ class Worker(object):
         # print('running', args)
         cmdline = args.get_args()
         debug.subcommand_exec(cmdline)
-        # ? HOW DOES METAFLOW EXECUTE STEPS OF FLOW ?
-        # $ Constructing CLI Args and Running them as Subprocesses. 
-        # $ This is important because on Basis of the CLI Args we can modify code executing on remote or local
         return subprocess.Popen(cmdline,
                                 env=env,
                                 bufsize=1,
