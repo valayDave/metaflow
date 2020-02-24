@@ -78,7 +78,6 @@ class MetaflowEnvironment(object):
 
     def get_package_commands(self, code_package_url):
         cmds = ["set -e",
-                "echo 'Hello This is a Hi From Custom Library'",
                 "echo \'Setting up task environment.\'",
                 "%s -m pip install awscli click requests boto3 \
                     --user -qqq" % self._python(),
