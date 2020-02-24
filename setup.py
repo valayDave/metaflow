@@ -18,7 +18,8 @@ setup(name='metaflow',
       install_requires = [
         'click>=7.0',
         'requests',
-        'boto3'
+        'boto3',
+        'kubernetes==10.0.1'
       ],
       tests_require = [
         'coverage'
