@@ -133,7 +133,6 @@ class KubeJob(object):
 
         return self
 
-    # $ (TODO) : TEST THIS FUNCTION HERER.. 
     def meta_data_label(self,key,value):
         self.payload.metadata.labels[key] = value
         return self
@@ -374,7 +373,6 @@ class RunningKubeJob(KubeJobSpec):
             
 
     def kill(self):
-        # $ (TODO) : TEST THIS FUNCTION TO CHECK IF THE DELETE IS HAPPENING PROPERLY 
         if not self.is_done:
             self._batch_api_client.delete_namespaced_job(self.name,self.namespace)
         return self.update()

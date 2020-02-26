@@ -171,9 +171,8 @@ class Kube(object):
             .meta_data_label('flow_name', attrs['metaflow.flow_name']) \
             .meta_data_label('task_id', attrs['metaflow.task_id']) \
             .meta_data_label('retry_count', attrs['metaflow.retry_count']) \
-            .namespace(kube_namespace)  # $ (TODO) NEED TO MAKE THIS BRING THIS FROM ENV VAR / FROM FUNCTION CALLER
+            .namespace(kube_namespace) 
             # $ (TODO) : Set the AWS Keys based Kube Secret references here.
-
 
         for name, value in env.items():
             job.environment_variable(name, value)
