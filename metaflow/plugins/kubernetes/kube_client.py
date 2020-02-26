@@ -30,20 +30,25 @@ class KubeClient(object):
     def unfinished_jobs(self):
         """unfinished_jobs [Gets the Kube jobs which are unfinished.]
         
-        :return: [tuple with KubeJobSpec Objects]
-        :rtype: [Tuple(KubeJobSpec)]
+        :return: [List with KubeJobSpec Objects]
+        :rtype: [List[KubeJobSpec]]
         """
-        # $ (TODO) : NAMESPACE NEEDS TO COME FROM ENV VAR. 
-        # ! NAMESPACES NEED TO BE FIXED. NEED TO DECLARE AN ENV VAR FOR MY Kubernetes EVN. 
+        # $ NAMESPACE Comes FROM ENV VAR. 
         # $ Get the Jobs.
-        jobs = kube_client.BatchV1Api(self._client).list_namespaced_job(KUBE_NAMESPACE,include_uninitialized=False,timeout_seconds=60)
-        return (KubeJobSpec(self._client,job.metadata.name,job.metadata.namespace).update() for job in jobs.items if job.status.active is not None)
+        jobs = kube_client.BatchV1Api(self._client).list_namespaced_job(KUBE_NAMESPACE,timeout_seconds=60)
+        kube_specs = []
+        for job in jobs.items:
+            if job.status.active is not None:
+                ks = KubeJobSpec(self._client,job.metadata.name,job.metadata.namespace,dont_update=True)
+                ks._apply(job)
+                kube_specs.append(ks)
+        return kube_specs
 
     def job(self):
         return KubeJob(self._client)
 
-    def attach_job(self, job_name,namespace):
-        job = RunningKubeJob(self._client,job_name,namespace)
+    def attach_job(self, job_name,namespace,**kwargs):
+        job = RunningKubeJob(self._client,job_name,namespace,**kwargs)
         return job.update()
 
 
@@ -54,14 +59,17 @@ class KubeJobException(MetaflowException):
 class KubeJobSpecException(MetaflowException):
     headline = 'Kube job Exception'
 
+
+
 class KubeJob(object):
-    """KubeJob [summary]
+    """KubeJob 
+        Job Object Created to Set Job Properties like ENV Vars,Etc.
+        Consists of the `execute` method which provides `RunningKubeJob` Object. 
+        `RunningKubeJob` will help provide the logs and jobs for the current 
+        Native runtime. 
     
-    :param object: [description]
-    :type object: [type]
-    :raises KubeJobException: [description]
-    :return: [description]
-    :rtype: [type]
+
+    :raises KubeJobException: [Upon Failure of `execute` method]
     """
     def __init__(self, client):
         self._client = client
@@ -210,52 +218,57 @@ class KubeJobSpec(object):
     
     Parameter Behaviour : 
 
-    'update_once' : 
-        If True:
-            Will ensure that the bound Object will only update once. During updation, if there is failure the job will raise 
-            an exception. 
+    'dont_update': 
+        If True: 
+            Will not allow any update to object ever via update API. Hence will never hit the bound API. 
+            Used In cases where list of objects are fetched in a List API and then this class is Used to wrap a High level hooks into the kubernetes response. 
 
         If False:
-            It will update When ever some property requires it to be called. such as 'is_done', 'is_running',
+            It Object is bound to Kube API. If there are functions calling the properties which will involve checking the Kube cluster Like is_done, is_running etc. then this is very useful. 
+            This is leveraged by the RunningKubeJob Object sets don't update as false. 
     
     :raises KubeJobSpecException: If bound API Fails it will raise Exception. 
     """
-    def __init__(self,client,job_name,namespace,update_once=True):
+    def __init__(self,client,job_name,namespace,dont_update=False):
         super().__init__()
         self._client = client
         self._batch_api_client = kube_client.BatchV1Api(client)
         self.name = job_name
         self.updated = False
-        self.update_once = update_once
+        self.dont_update = dont_update
         self.namespace = namespace
+        self._data = {}
+        self.update()
 
     def __repr__(self):
-        return '{}(\'{}\')'.format(self.__class__.__name__, self._id)
+        return '{}(\'{}\')'.format(self.__class__.__name__, self.name)
 
     def _apply(self, data):
-        self.updated = True
         self._data = data
+        self.updated = True
 
     @limit(1)
     def _update(self):
+        if self.dont_update:
+            return 
         try:
             # $ https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/BatchV1Api.md#read_namespaced_job
             data = self._batch_api_client.read_namespaced_job(self.name,self.namespace)
         except ApiException as e :
-            if self.update_once:
-                # $ (TODO) : See if this is a good Way of Managing Exceptions. Should update_once be allowed to keep api Exceptions
+            if self.updated: # $ This is to handle the case when jobs killed via CLI and The runtime is stuck in execution
+                if e.status == 404:
+                    raise KubeJobSpecException("Job Has been Deleted from the Cluster. Exiting Gracefully.")
+                    return 
                 raise KubeJobSpecException('Error in read_namespaced_job API %s'%str(e))
             return 
         self._apply(data)
 
     def update(self):
-        if not self.updated or not self.update_once:
-            self._update()
+        self._update()
         return self
     
     @property
-    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
-    def id(self): # ! NEED TO CHECK IF THIS SHOULD BE DONE OR NOT.
+    def id(self): 
         return self.info.metadata.uid
 
     @property
@@ -264,7 +277,6 @@ class KubeJobSpec(object):
 
     @property
     def job_name(self):
-    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         return self.info.metadata.name
     
     @property
@@ -280,9 +292,7 @@ class KubeJobSpec(object):
         elif self.is_crashed:
             return 'FAILED'
         else:
-            return 'UNKNOWN_STATUS'
-    
-    # $ TODO : Add Metadata Labels As a Property. 
+            return 'UNKNOWN_STATUS' 
 
     @property
     def status_reason(self):
@@ -290,37 +300,31 @@ class KubeJobSpec(object):
 
     @property
     def created_at(self):
-    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         return self.info.status.start_time
 
     @property
     def is_done(self):
-    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         if self.info.status.completion_time is None:
             self.update()
         return self.info.status.completion_time is not None
 
     @property
     def is_running(self):
-    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         if self.info.status.active == 1:
             self.update()
         return self.info.status.active == 1
 
     @property
     def is_successful(self):
-    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         return self.info.status.succeeded is not None
 
     @property
     def is_crashed(self):
-    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         # TODO: Check statusmessage to find if the job crashed instead of failing
         return self.info.status.failed is not None
 
     @property
     def reason(self):
-    # $ (TODO) : TEST THIS FUNCTION TO CHECK IF the if CONDITION IS EVER NEEDED OR NOT
         reason = []
         if self.info.status.conditions is not None:
             for obj in self.info.status.conditions:
@@ -330,13 +334,12 @@ class KubeJobSpec(object):
         return '\n'.join(reason)
 
 
-# $ ? Doubt : Why do u inherit Object ?
 class RunningKubeJob(KubeJobSpec):
 
     NUM_RETRIES = 5
 
-    def __init__(self, client, job_name, namespace, update_once=False):
-        super().__init__(client, job_name, namespace, update_once=update_once)
+    def __init__(self, client, job_name, namespace,dont_update=False):
+        super().__init__(client, job_name, namespace,dont_update=dont_update)
 
     # $ https://stackoverflow.com/questions/56124320/how-to-get-log-and-describe-of-pods-in-kubernetes-by-python-client
     def logs(self):

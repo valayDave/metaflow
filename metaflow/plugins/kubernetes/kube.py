@@ -47,17 +47,21 @@ class Kube(object):
         cmds.extend(step_cli)
         return shlex.split('/bin/sh -c "%s"' % " && ".join(cmds))
 
-    def _search_jobs(self, flow_name, run_id, user): # $ (TODO) : TEST THIS FUNCTION AFTER NAMING CHANGE
-        item_set = set()
-        if user is None:
-            item_set = {('flow_name',str.lower(flow_name)),('run_id',run_id)}
-        else:
-            item_set = {('flow_name',str.lower(flow_name)),('run_id',run_id),('user',user)}
+    def _search_jobs(self, flow_name, run_id, user): # $ The Function Works.
+        """_search_jobs [Searches the jobs on Kube]
+        :rtype: [List[KubeJobSpec]]
+        """
+        # todo : throw error if there is no flow name
+        search_object = {'flow_name': flow_name}
+        if run_id is not None:
+            search_object['run_id'] = run_id
+        if user is not None:
+            search_object['user'] = user
         jobs = []
         for job in self._client.unfinished_jobs():
             # $ Use Labels to indentify jobs and thier executions. 
             job_labels = dict(job.labels)
-            if set(job_labels).intersection(item_set) == item_set: 
+            if set(job_labels.items()).intersection(set(search_object.items())) == set(search_object.items()):
                 jobs.append(job)
         return jobs
 
@@ -70,39 +74,41 @@ class Kube(object):
             task_id=task_id
             ) 
 
-    def _job_name(self, user, flow_name, run_id, step_name, task_id, retry_count): # $ (TODO) FIX NAMING PROBLEMS. Ask Questions in Community How to solve Naming Problem.
-        # ! : NAME GENERATION IS AN ISSUE. Name can only be as Long as 65 Chars. :: https://stackoverflow.com/questions/50412837/kubernetes-label-name-63-character-limit
+    def _job_name(self, user, flow_name, run_id, step_name, task_id, retry_count): # $ Name Generated using MD5 Hash because of Length problems. Labels are used instead. 
+        # $ Name can only be as Long as 65 Chars. :: https://stackoverflow.com/questions/50412837/kubernetes-label-name-63-character-limit
         curr_name = self._name_str(user, flow_name, run_id, step_name, task_id)
-
         # $ SHA the CURR Name and 
         curr_name = hashlib.sha224(curr_name.encode()).hexdigest()+'-'+retry_count
 
-        # if len(curr_name) > 65:
         return curr_name
 
-    def list_jobs(self, flow_name, run_id, user, echo): # $ (TODO) TEST THIS FUNCTION
+    def list_jobs(self, flow_name, run_id, user, echo): # $ THIS FUNCTION Works
         jobs = self._search_jobs(flow_name, run_id, user)
         if jobs:
             for job in jobs:
+                job_name = self._name_str(job.labels['user'],job.labels['flow_name'],job.labels['run_id'],job.labels['step_name'],job.labels['task_id'])+'-'+job.labels['retry_count']
                 echo(
                     '{name} [{id}] ({status})'.format(
-                        name=job.job_name, id=job.id, status=job.status
+                        name=job_name, id=job.id, status=job.status
                     )
                 )
         else:
             echo('No running Kube jobs found.')
 
-    def kill_jobs(self, flow_name, run_id, user, echo): # $ (TODO) TEST THIS FUNCTION
+    def kill_jobs(self, flow_name, run_id, user, echo): # $ THIS FUNCTION Works : Effects are unintended. Need to check the WRT the client API. 
         jobs = self._search_jobs(flow_name, run_id, user)
         if jobs:
             for job in jobs:
                 try:
-                    self._client.attach_job(job.job_name,job.namespace).kill()
+                    running_job = self._client.attach_job(job.job_name,job.namespace,dont_update=True)
+                    running_job._apply(job._data)
+                    job_name = self._name_str(job.labels['user'],job.labels['flow_name'],job.labels['run_id'],job.labels['step_name'],job.labels['task_id'])+'-'+job.labels['retry_count']
                     echo(
-                        'Killing Kube job: {name} [{id}] ({status})'.format(
-                            name=job.job_name, id=job.id, status=job.status
+                        'Killing Kube job: {name} [{id}]'.format(
+                            name=job_name, id=job.id
                         )
                     )
+                    running_job.kill()
                 except Exception as e:
                     echo(
                         'Failed to terminate Kube job %s %s [%s]'
@@ -135,7 +141,6 @@ class Kube(object):
             attrs['metaflow.task_id'],
             attrs['metaflow.retry_count'],
         )
-        # $ NOTE : Currently No Queues for Kubernetes Implementation
         job = self._client.job()
         job \
             .job_name(job_name) \
@@ -168,7 +173,7 @@ class Kube(object):
             .meta_data_label('retry_count', attrs['metaflow.retry_count']) \
             .namespace(kube_namespace)  # $ (TODO) NEED TO MAKE THIS BRING THIS FROM ENV VAR / FROM FUNCTION CALLER
             # $ (TODO) : Set the AWS Keys based Kube Secret references here.
-            # $ (TODO) : Need to Fix the Lowering of the values in the string. 
+
 
         for name, value in env.items():
             job.environment_variable(name, value)
