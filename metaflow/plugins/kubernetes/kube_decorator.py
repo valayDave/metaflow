@@ -14,8 +14,8 @@ from metaflow.plugins.timeout_decorator import get_run_time_limit_for_task
 from metaflow import util
 
 from .kube import Kube, KubeException
-from metaflow.metaflow_config import ECS_S3_ACCESS_IAM_ROLE, BATCH_JOB_QUEUE, \
-                    BATCH_CONTAINER_IMAGE, BATCH_CONTAINER_REGISTRY, KUBE_NAMESPACE
+from metaflow.metaflow_config import BATCH_CONTAINER_IMAGE, BATCH_CONTAINER_REGISTRY, KUBE_NAMESPACE
+                    
 
 try:
     # python2
@@ -120,7 +120,7 @@ class KubeDecorator(StepDecorator):
             if BATCH_CONTAINER_REGISTRY:
                 self.attributes['image'] = '%s/%s' % (BATCH_CONTAINER_REGISTRY.rstrip('/'), 
                     self.attributes['image'])
-
+        
     def step_init(self, flow, graph, step, decos, environment, datastore, logger):
         if datastore.TYPE != 's3':
             raise KubeException('The *@kube* decorator requires --datastore=s3.')
