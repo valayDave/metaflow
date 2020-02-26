@@ -109,7 +109,7 @@ class KubeJob(object):
         self.container.env = self.env_list
 
         self.template.spec = kube_client.V1PodSpec(containers=[self.container],restart_policy='Never')
-        self.payload.spec = kube_client.V1JobSpec(ttl_seconds_after_finished=600, template=self.template)
+        self.payload.spec = kube_client.V1JobSpec(ttl_seconds_after_finished=100, template=self.template)
         try: 
             api_response = self._api_client.create_namespaced_job(self.namespace_name,body=self.payload)
             # $ Returning from within try to ensure There was correct Response
@@ -192,7 +192,6 @@ class KubeJob(object):
         # self.payload['timeout']['attemptDurationSeconds'] = timeout_in_secs
         return self
 
-
 class limit(object):
     def __init__(self, delta_in_secs):
         self.delta_in_secs = delta_in_secs
@@ -235,6 +234,7 @@ class KubeJobSpec(object):
         self.name = job_name
         self.updated = False
         self.dont_update = dont_update
+        self.job_deleted = False
         self.namespace = namespace
         self._data = {}
         self.update()
@@ -248,7 +248,7 @@ class KubeJobSpec(object):
 
     @limit(1)
     def _update(self):
-        if self.dont_update:
+        if self.dont_update or self.job_deleted:
             return 
         try:
             # $ https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/BatchV1Api.md#read_namespaced_job
@@ -256,6 +256,7 @@ class KubeJobSpec(object):
         except ApiException as e :
             if self.updated: # $ This is to handle the case when jobs killed via CLI and The runtime is stuck in execution
                 if e.status == 404:
+                    self.job_deleted = True
                     raise KubeJobSpecException("Job Has been Deleted from the Cluster. Exiting Gracefully.")
                     return 
                 raise KubeJobSpecException('Error in read_namespaced_job API %s'%str(e))
@@ -334,7 +335,19 @@ class KubeJobSpec(object):
 
 
 class RunningKubeJob(KubeJobSpec):
+    """RunningKubeJob 
+    Inherits the KubeJobSpec class which provides hooks to the job running on Kubernetes. Created by subproccess/main process via CLI for following:
+        - Monitoring the Running job created during exection of each step. 
+            - Helps monitor logs and perform post job cleanup tasks. 
+        - Listing currently running jobs for a flow from the CLI 
+        - Killing currently running job from CLI. 
 
+    :type KubeJobSpec:
+    
+    Options
+    -----
+    :dont_update : Inherited from parent 
+    """
     NUM_RETRIES = 5
 
     def __init__(self, client, job_name, namespace,dont_update=False):
@@ -369,10 +382,13 @@ class RunningKubeJob(KubeJobSpec):
                 if self.is_crashed:
                     break
                 # sys.stderr.write('Except : '+str(i))
-                time.sleep(2 ** i)
-            
+                time.sleep(2 ** i)        
 
     def kill(self):
         if not self.is_done:
-            self._batch_api_client.delete_namespaced_job(self.name,self.namespace)
+            self.delete()
         return self.update()
+    
+    def delete(self):
+        if not self.job_deleted: 
+            self._batch_api_client.delete_namespaced_job(self.name,self.namespace)

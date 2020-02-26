@@ -173,7 +173,6 @@ class Kube(object):
             .meta_data_label('retry_count', attrs['metaflow.retry_count']) \
             .namespace(kube_namespace) 
             # $ (TODO) : Set the AWS Keys based Kube Secret references here.
-
         for name, value in env.items():
             job.environment_variable(name, value)
         for name, value in self.metadata.get_runtime_environment('kube').items():
