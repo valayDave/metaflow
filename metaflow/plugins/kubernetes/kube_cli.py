@@ -10,6 +10,7 @@ from distutils.dir_util import copy_tree
 
 from .kube import Kube, KubeKilledException
 
+from .argo import argo_cli
 from metaflow.datastore import MetaflowDataStore
 from metaflow.datastore.local import LocalDataStore
 from metaflow.datastore.util.s3util import get_s3_client
@@ -36,6 +37,9 @@ def cli():
 def kube():
     pass
 
+def get_cli(): # more Extensions can be added Here. 
+    kube.add_command(argo_cli.argo)
+    return cli
 
 def _execute_cmd(func, flow_name, run_id, user, my_runs, echo):
     if user and my_runs:
@@ -117,7 +121,7 @@ def kill(ctx, run_id, user, my_runs):
 
 @kube.command(
     help="Execute a single task using Kube. This command "
-    "calls the top-level step command inside a Kube Job Container"
+    "calls the top-level step command inside a Kube Job Container "
     "with the given options. Typically you do not "
     "call this command directly; it is used internally "
     "by Metaflow."

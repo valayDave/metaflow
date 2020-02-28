@@ -12,7 +12,7 @@ def get_plugin_cli():
 
     return [package_cli.cli,
             batch_cli.cli,
-            kube_cli.cli]
+            kube_cli.get_cli()]
 
 # Add new decorators in this list
 from .catch_decorator import CatchDecorator
