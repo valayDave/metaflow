@@ -14,9 +14,6 @@ except NameError:
 from metaflow.exception import MetaflowException
 from metaflow.metaflow_config import get_kubernetes_client,KUBE_NAMESPACE
 
-import kubernetes.client as kube_client
-from kubernetes import watch
-from kubernetes.client.rest import ApiException
 
 MAX_MEMORY = 32*1000
 MAX_CPU = 8
@@ -25,7 +22,7 @@ MAX_CPU = 8
 class KubeClient(object):
     def __init__(self):
         # todo : set the 
-        self._client = get_kubernetes_client()
+        self._client,self._kube_client = get_kubernetes_client()
 
     def unfinished_jobs(self):
         """unfinished_jobs [Gets the Kube jobs which are unfinished.]
@@ -35,20 +32,20 @@ class KubeClient(object):
         """
         # $ NAMESPACE Comes FROM ENV VAR. 
         # $ Get the Jobs.
-        jobs = kube_client.BatchV1Api(self._client).list_namespaced_job(KUBE_NAMESPACE,timeout_seconds=60)
+        jobs = self._kube_client.BatchV1Api(self._client).list_namespaced_job(KUBE_NAMESPACE,timeout_seconds=60)
         kube_specs = []
         for job in jobs.items:
             if job.status.active is not None:
-                ks = KubeJobSpec(self._client,job.metadata.name,job.metadata.namespace,dont_update=True)
+                ks = KubeJobSpec(api_client=self._client,kube_client=self._kube_client,job_name=job.metadata.name,namespace=job.metadata.namespace,dont_update=True)
                 ks._apply(job)
                 kube_specs.append(ks)
         return kube_specs
 
     def job(self):
-        return KubeJob(self._client)
+        return KubeJob(api_client=self._client,kube_client=self._kube_client)
 
     def attach_job(self, job_name,namespace,**kwargs):
-        job = RunningKubeJob(self._client,job_name,namespace,**kwargs)
+        job = RunningKubeJob(api_client=self._client,kube_client=self._kube_client,job_name=job_name,namespace=namespace,**kwargs)
         return job.update()
 
 
@@ -57,7 +54,7 @@ class KubeJobException(MetaflowException):
 
 
 class KubeJobSpecException(MetaflowException):
-    headline = 'Kube job Exception'
+    headline = 'Kube job Specification  Exception'
 
 
 
@@ -71,23 +68,33 @@ class KubeJob(object):
 
     :raises KubeJobException: [Upon Failure of `execute` method]
     """
-    def __init__(self, client):
-        self._client = client
-        self._api_client = kube_client.BatchV1Api(client)
-        self.payload = kube_client.V1Job(api_version="batch/v1", kind="Job")
-        self.payload.metadata = kube_client.V1ObjectMeta()
+    def __init__(self, api_client=None,kube_client=None):
+        try:
+            from kubernetes.client.rest import ApiException
+        except:
+            raise KubeJobException(
+                'Could not import module \'kubernetes\' which '
+                'is required for Kubernetes batch jobs. Install kubernetes '
+                'first.'
+            )
+        self.API_EXCEPTION = ApiException
+        self._client = api_client
+        self._kube_client = kube_client
+        self._api_client = self._kube_client.BatchV1Api(self._client)
+        self.payload = self._kube_client.V1Job(api_version="batch/v1", kind="Job")
+        self.payload.metadata = self._kube_client.V1ObjectMeta()
         self.payload.metadata.labels = dict()
-        self.payload.status = kube_client.V1JobStatus()
+        self.payload.status = self._kube_client.V1JobStatus()
         self.namespace_name = None
         self.name = None
-        # self.template = kube_client.V1PodTemplate()
-        self.template = kube_client.V1PodTemplateSpec()
+        # self.template = self._kube_client.V1PodTemplate()
+        self.template = self._kube_client.V1PodTemplateSpec()
         self.env_list = []
         self.params = []
         self._image = None
-        self.container = kube_client.V1Container(name='metaflow-job') 
+        self.container = self._kube_client.V1Container(name='metaflow-job') 
         self.command_value = None # $ Need to figure how to structure this properly. 
-        self.container.resources = kube_client.V1ResourceRequirements(limits={'cpu':str(MAX_CPU*1000)+"m",'memory':str(MAX_MEMORY)+"Mi"},requests={}) # $ NOTE: Currently Setting Hard Limits. Will Change Later
+        self.container.resources = self._kube_client.V1ResourceRequirements(limits={'cpu':str(MAX_CPU*1000)+"m",'memory':str(MAX_MEMORY)+"Mi"},requests={}) # $ NOTE: Currently Setting Hard Limits. Will Change Later
 
 
     def execute(self):
@@ -108,14 +115,14 @@ class KubeJob(object):
         self.container.args = self.command_value[1:]
         self.container.env = self.env_list
 
-        self.template.spec = kube_client.V1PodSpec(containers=[self.container],restart_policy='Never')
-        self.payload.spec = kube_client.V1JobSpec(ttl_seconds_after_finished=100, template=self.template)
+        self.template.spec = self._kube_client.V1PodSpec(containers=[self.container],restart_policy='Never')
+        self.payload.spec = self._kube_client.V1JobSpec(ttl_seconds_after_finished=100, template=self.template)
         try: 
             api_response = self._api_client.create_namespaced_job(self.namespace_name,body=self.payload)
             # $ Returning from within try to ensure There was correct Response
-            job = RunningKubeJob(self._client,self.name,self.namespace_name)
+            job = RunningKubeJob(api_client=self._client,kube_client=self._kube_client,job_name=self.name,namespace=self.namespace_name)
             return job.update()
-        except ApiException as e:
+        except self.API_EXCEPTION as e:
             # $ (TODO) : TEST AND CHECK IF THE EXCEPTION BEING RAISED IS APPROPRIATEDLY CAUGHT
             print(e)
             raise KubeJobException("Exception when calling API: %s\n" % e)
@@ -183,7 +190,7 @@ class KubeJob(object):
         return self
 
     def environment_variable(self, name, value):
-        self.env_list.append(kube_client.V1EnvVar(name=name,value=value))
+        self.env_list.append(self._kube_client.V1EnvVar(name=name,value=value))
         return self
 
     # $ (TODO) : CHECK JOB CONFIGS TO SEE HOW LONG TO PERSIST A JOB AFTER COMPLETION/FAILURE
@@ -208,29 +215,32 @@ class limit(object):
 
 class KubeJobSpec(object):
     """KubeJobSpec 
-    The purpose if this class is to bind with Job Related highlevel object will API's of Kubernetes.
-    This binds the object to job name and namespace. running the KubeJobSpec().update() will update the object 
-    with the latest observations from Kubernetes. The updates are stored in the _data property. We use properties of a 
-    job such as 'id','job_name','status','created_at', 'is_done' etc as high level abstractions to what the Object that kubernetes
-    api returns. We achieve this using @property decorator.
-    
-    Parameter Behaviour : 
+        The purpose if this class is to bind with Job Related highlevel object will API's of Kubernetes.
+        This binds the object to job name and namespace. running the KubeJobSpec().update() will update the object 
+        with the latest observations from Kubernetes. The updates are stored in the _data property. We use properties of a 
+        job such as 'id','job_name','status','created_at', 'is_done' etc as high level abstractions to what the Object that kubernetes
+        api returns. We achieve this using @property decorator.
+        
+        :parameter api_client [kubernetes.client.ApiClient]
+        :parameter kube_client [kubernetes.client]
+        :parameter job_name [str],
+        :parameter namespace [str] : Kubernetes Namespace comes here. ,
+        :parameter dont_update [bool]
+            If True: 
+                Will not allow any update to object ever via update API. Hence will never hit the bound API. 
+                Used In cases where list of objects are fetched in a List API and then this class is Used to wrap a High level hooks into the kubernetes response. 
 
-    'dont_update': 
-        If True: 
-            Will not allow any update to object ever via update API. Hence will never hit the bound API. 
-            Used In cases where list of objects are fetched in a List API and then this class is Used to wrap a High level hooks into the kubernetes response. 
-
-        If False:
-            It Object is bound to Kube API. If there are functions calling the properties which will involve checking the Kube cluster Like is_done, is_running etc. then this is very useful. 
-            This is leveraged by the RunningKubeJob Object sets don't update as false. 
-    
-    :raises KubeJobSpecException: If bound API Fails it will raise Exception. 
+            If False:
+                It Object is bound to Kube API. If there are functions calling the properties which will involve checking the Kube cluster Like is_done, is_running etc. then this is very useful. 
+                This is leveraged by the RunningKubeJob Object sets don't update as false. 
+        
+        :raises KubeJobSpecException: If bound API Fails it will raise Exception. 
     """
-    def __init__(self,client,job_name,namespace,dont_update=False):
+    def __init__(self,api_client=None,kube_client=None,job_name=None,namespace=None,dont_update=False):
         super().__init__()
-        self._client = client
-        self._batch_api_client = kube_client.BatchV1Api(client)
+        self._kube_client = kube_client
+        self._client = api_client
+        self._batch_api_client = self._kube_client.BatchV1Api(self._client)
         self.name = job_name
         self.updated = False
         self.dont_update = dont_update
@@ -350,15 +360,23 @@ class RunningKubeJob(KubeJobSpec):
     """
     NUM_RETRIES = 5
 
-    def __init__(self, client, job_name, namespace,dont_update=False):
-        super().__init__(client, job_name, namespace,dont_update=dont_update)
+    def __init__(self, api_client=None, kube_client=None, job_name=None, namespace=None, dont_update=False):
+        super().__init__(api_client=api_client, kube_client=kube_client, job_name=job_name, namespace=namespace, dont_update=dont_update)
 
     # $ https://stackoverflow.com/questions/56124320/how-to-get-log-and-describe-of-pods-in-kubernetes-by-python-client
     def logs(self):
         pod_label_selector = "controller-uid=" + self.info.spec.template.metadata.labels.get('controller-uid')
-        pods_list = kube_client.CoreV1Api(self._client).list_namespaced_pod(self.namespace,label_selector=pod_label_selector, timeout_seconds=10)
+        pods_list = self._kube_client.CoreV1Api(self._client).list_namespaced_pod(self.namespace,label_selector=pod_label_selector, timeout_seconds=10)
         pod_name = pods_list.items[0].metadata.name
         # There is no Need to check if the job is in runnable state as the Job will be runnnig on Kube
+        try:
+            from kubernetes import watch # $ Done this for soft dependency scoping. 
+        except:
+            raise KubeJobException(
+                'Could not import module \'kubernetes\' which '
+                'is required for Kubernetes batch jobs. Install kubernetes '
+                'first.'
+            )
         watcher = watch.Watch()
         for i in range(self.NUM_RETRIES):
             if self.is_done:
@@ -366,7 +384,7 @@ class RunningKubeJob(KubeJobSpec):
             try:
                 check_after_done = 0
                 # last_call = time()
-                for line in watcher.stream(kube_client.CoreV1Api(self._client).read_namespaced_pod_log, name=pod_name, namespace=self.namespace):
+                for line in watcher.stream(self._kube_client.CoreV1Api(self._client).read_namespaced_pod_log, name=pod_name, namespace=self.namespace):
                     # start_time = datetime.datetime.now()
                     if not line:
                         if self.is_done:
