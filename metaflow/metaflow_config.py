@@ -177,12 +177,22 @@ def get_pinned_conda_libs():
 
 KUBE_CONFIG_FILE_PATH = from_conf('METAFLOW_KUBE_CONFIG_PATH','~/.kube/config')
 KUBE_NAMESPACE = from_conf('METAFLOW_KUBE_NAMESAPCE','default')
+KUBE_RUNTIME_IN_CLUSTER = from_conf('METAFLOW_RUNTIME_IN_CLUSTER','no')
 
 def get_kubernetes_client():
-    from kubernetes import config
+    import kubernetes.config as kube_config
     import kubernetes.client as kube_client
-    Kube_Configured_Api_Client = config.new_client_from_config(config_file=KUBE_CONFIG_FILE_PATH)
-    return Kube_Configured_Api_Client,kube_client
+    try:
+        if KUBE_RUNTIME_IN_CLUSTER == 'no':
+            Kube_Configured_Api_Client = kube_config.new_client_from_config(config_file=KUBE_CONFIG_FILE_PATH)
+            return Kube_Configured_Api_Client,kube_client
+        else:
+            kube_config.load_incluster_config()
+            configuration = kube_client.Configuration()
+            Kube_Configured_Api_Client = kube_client.ApiClient(configuration)
+            return Kube_Configured_Api_Client,kube_client
+    except Exception as e:
+        raise MetaflowException("Error Loading Kubernetes Configuration. %s" % str(e))
     
 
 cached_aws_sandbox_creds = None
