@@ -8,10 +8,11 @@ import click
 
 from distutils.dir_util import copy_tree
 
-from .kube import Kube, KubeKilledException,KubeException
-
+from .kube import Kube, KubeKilledException, KubeException
+from .deploy.runtime import KubeDeployRuntime
 from metaflow import decorators
 from metaflow.graph import FlowGraph
+
 from metaflow.datastore import MetaflowDataStore
 from metaflow import parameters
 from metaflow.package import MetaflowPackage
@@ -32,6 +33,7 @@ try:
 except:  # noqa E722
     # python3
     from urllib.parse import urlparse
+
 
 @click.group()
 def cli():
@@ -61,7 +63,8 @@ def _execute_cmd(func, flow_name, run_id, user, my_runs, echo):
     if not run_id and latest_run:
         run_id = util.get_latest_run_id(echo, flow_name)
         if run_id is None:
-            raise CommandException("A previous run id was not found. Specify --run-id.")
+            raise CommandException(
+                "A previous run id was not found. Specify --run-id.")
 
     func(flow_name, run_id, user, echo)
 
@@ -92,6 +95,7 @@ def _sync_metadata(echo, metadata, datastore_root, attempt):
                     update=True)
         except err as e:  # noqa F841
             pass
+
 
 @kube.command(help="List running Kube tasks of this flow")
 @click.option(
@@ -177,12 +181,13 @@ def step(
         ctx.obj.echo_always("[%s] %s" % (batch_id, msg))
 
     if ctx.obj.datastore.datastore_root is None:
-        ctx.obj.datastore.datastore_root = ctx.obj.datastore.get_datastore_root_from_config(echo)
+        ctx.obj.datastore.datastore_root = ctx.obj.datastore.get_datastore_root_from_config(
+            echo)
 
     if executable is None:
         executable = ctx.obj.environment.executable(step_name)
     entrypoint = "%s -u %s" % (executable, os.path.basename(sys.argv[0]))
-    
+
     top_args = " ".join(util.dict_to_cli_options(ctx.parent.parent.params))
 
     input_paths = kwargs.get("input_paths")
@@ -190,7 +195,7 @@ def step(
     if input_paths:
         max_size = 30 * 1024
         split_vars = {
-            "METAFLOW_INPUT_PATHS_%d" % (i // max_size): input_paths[i : i + max_size]
+            "METAFLOW_INPUT_PATHS_%d" % (i // max_size): input_paths[i: i + max_size]
             for i in range(0, len(input_paths), max_size)
         }
         kwargs["input_paths"] = "".join("${%s}" % s for s in split_vars.keys())
@@ -199,7 +204,7 @@ def step(
     step_cli = u"{entrypoint} {top_args} step {step} {step_args}".format(
         entrypoint=entrypoint, top_args=top_args, step=step_name, step_args=step_args
     )
-    # Example value of what the result of the step_cli parameter when running remotely on Batch. 
+    # Example value of what the result of the step_cli parameter when running remotely on Batch.
     # STEP CLI :  metaflow_HelloAWSFlow_linux-64_42c548a8c1def9ca0d877bf671025b5e69b97f83/bin/python -s -u hello.py --quiet --metadata local --environment conda --datastore s3 --event-logger nullSidecarLogger --monitor nullSidecarMonitor --datastore-root s3://kubernetes-first-test-store/metaflow_store --with batch:cpu=1,gpu=0,memory=1000,image=python:3.7,queue=arn:aws:batch:us-east-1:314726501535:job-queue/Metaflow-Job-Q,iam_role=arn:aws:iam::314726501535:role/Metaflow_Batch_ECS_Role_TEST --package-suffixes .py --pylint step start --run-id 1581986312466293 --task-id 1 --input-paths ${METAFLOW_INPUT_PATHS_0}
     node = ctx.obj.graph[step_name]
 
@@ -288,10 +293,11 @@ def before_run(obj, tags, decospecs):
         decorators._attach_decorators(obj.flow, decospecs)
         obj.graph = FlowGraph(obj.flow.__class__)
     obj.check(obj.graph, obj.flow, obj.environment, pylint=obj.pylint)
-    #obj.environment.init_environment(obj.logger)
+    # obj.environment.init_environment(obj.logger)
 
     if obj.datastore.datastore_root is None:
-        obj.datastore.datastore_root = obj.datastore.get_datastore_root_from_config(obj.echo)
+        obj.datastore.datastore_root = obj.datastore.get_datastore_root_from_config(
+            obj.echo)
 
     decorators._init_decorators(
         obj.flow, obj.graph, obj.environment, obj.datastore, obj.logger)
@@ -301,9 +307,8 @@ def before_run(obj, tags, decospecs):
     # We explicitly avoid doing this in `start` since it is invoked for every
     # step in the run.
     # TODO(crk): Capture time taken to package and log to keystone.
-    obj.package = MetaflowPackage(obj.flow, obj.environment, obj.logger, obj.package_suffixes)
-
-
+    obj.package = MetaflowPackage(
+        obj.flow, obj.environment, obj.logger, obj.package_suffixes)
 
 
 def common_run_options(func):
@@ -351,44 +356,83 @@ def common_run_options(func):
 def kube_deploy():
     pass
 
+
 @parameters.add_custom_parameters
 @kube_deploy.command(help='Run the workflow In a container on Kubernetes.')
 @common_run_options
+@click.option('--dont_exit','dont_exit',is_flag=False,help='This will keep running the Deploy for log tailing even after it is done')
+@click.option('--kube-namespace','kube_namespace',default=None,help='This will keep running the Deploy for log tailing even after it is done')
 @click.pass_obj
 def native(
-    ctx,
-    tags=None,
-    max_workers=None,
-    max_num_splits=None,
-    max_log_size=None,
-    decospecs=None,
-    run_id_file=None,
-    user_namespace=None,**kwargs):
-    
+        ctx,
+        tags=None,
+        max_workers=None,
+        max_num_splits=None,
+        max_log_size=None,
+        decospecs=None,
+        run_id_file=None,
+        user_namespace=None,
+        dont_exit=None,
+        kube_namespace=None,
+        **kwargs):
+
     def echo(batch_id, msg, stream=sys.stdout):
         ctx.obj.echo_always("[%s] %s" % (batch_id, msg))
-    print(kwargs)
+    # print(kwargs)
     if namespace is not None:
         namespace(user_namespace or None)
-    
+
     before_run(ctx, tags, decospecs + ctx.environment.decospecs())
 
     supported_datastore = ['s3']
-    if ctx.metadata.TYPE != 'service':
-        raise KubeException('Need Service Based Metadata Provider to Make run happen on Kubernetes')
+    # if ctx.metadata.TYPE != 'service':
+    #     raise KubeException('Need Service Based Metadata Provider to Make run happen on Kubernetes')
 
-    if ctx.datastore.TYPE not in supported_datastore: 
-        raise KubeException('Kubernetes Deployment supports {} as Datastores and not {}'.format(' '.join(supported_datastore),ctx.datastore.TYPE))
+    if ctx.datastore.TYPE not in supported_datastore:
+        raise KubeException('Kubernetes Deployment supports {} as Datastores and not {}'.format(
+            ' '.join(supported_datastore), ctx.datastore.TYPE))
 
     if ctx.datastore.datastore_root is None:
-        ctx.datastore.datastore_root = ctx.datastore.get_datastore_root_from_config(echo)
+        ctx.datastore.datastore_root = ctx.datastore.get_datastore_root_from_config(
+            echo)
 
-    executable = ctx.environment.executable('start')        
-    entrypoint = "%s -u %s" % (executable, os.path.basename(sys.argv[0]))
-    
-    run_args = " ".join(util.dict_to_cli_options(kwargs))
-    print(run_args)
-    print(ctx.datastore)
-    ## Sync Items to datastore and retrieve them on the 
+    executable = ctx.environment.executable('start')
+    ctx.entrypoint = "%s -u %s" % (executable, os.path.basename(sys.argv[0]))
 
-    
+    # Set kube deployment attributes
+    attrs = {
+        "metaflow.user": util.get_username(),
+        "metaflow.flow_name": ctx.flow.name,
+        "metaflow.version": ctx.environment.get_environment_info()[
+            "metaflow_version"
+        ]
+    }
+
+    deploy_runtime = KubeDeployRuntime(ctx.flow,
+                                       ctx.graph,
+                                       ctx.datastore,
+                                       ctx.metadata,
+                                       ctx.environment,
+                                       ctx.package,
+                                       ctx.logger,
+                                       ctx.entrypoint,
+                                       ctx.event_logger,
+                                       ctx.monitor,
+                                       max_workers=max_workers,
+                                       max_num_splits=max_num_splits,
+                                       max_log_size=max_log_size * 1024 * 1024,
+                                       dont_exit=dont_exit,
+                                       kube_namespace=kube_namespace,
+                                       **kwargs)
+
+    deploy_runtime.persist_runtime(util.get_username())
+
+
+    # ctx.datastore.
+    # print(type(kwargs))
+    # print(run_args)
+    # print(ctx.datastore.datastore_root)
+    # Sync Items to datastore and retrieve them on the
+    # $ Sync Files to a Datasource.
+
+    # $ Use Kube to launch Job with the Specified Launch template.
