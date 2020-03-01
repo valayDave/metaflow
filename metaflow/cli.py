@@ -454,7 +454,6 @@ def init(obj, run_id=None, task_id=None, **kwargs):
 
     if obj.datastore.datastore_root is None:
         obj.datastore.datastore_root = obj.datastore.get_datastore_root_from_config(obj.echo)
-
     runtime = NativeRuntime(obj.flow,
                             obj.graph,
                             obj.datastore,
@@ -725,7 +724,7 @@ def start(ctx,
         echo = echo_always
 
     ctx.obj.version = metaflow_version.get_version()
-
+    echo('CUSTOM START %s'%'bitch', fg='magenta', bold=True, nl=True)
     echo('Metaflow %s' % ctx.obj.version, fg='magenta', bold=True, nl=False)
     echo(" executing *%s*" % ctx.obj.flow.name, fg='magenta', nl=False)
     echo(" for *%s*" % resolve_identity(), fg='magenta')
@@ -767,9 +766,12 @@ def start(ctx,
                                                   ctx.obj.monitor)
     ctx.obj.datastore = DATASTORES[datastore]
     ctx.obj.datastore_root = datastore_root
-    if ctx.invoked_subcommand not in ('run', 'resume'):
+    print("Subcommand : ",ctx.invoked_subcommand)
+    if ctx.invoked_subcommand not in ('run', 'resume','kube-deploy'):
         # run/resume are special cases because they can add more decorators with --with,
         # so they have to take care of themselves.
+        # $ This is where decorators are initialised for any command which is not  `run` or `resume`  
+        # $ Hence to add a Deploy command we will have to add a completely new cli which supports 
         decorators._attach_decorators(
             ctx.obj.flow, ctx.obj.environment.decospecs())
         decorators._init_decorators(

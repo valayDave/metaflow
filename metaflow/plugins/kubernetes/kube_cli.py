@@ -8,9 +8,15 @@ import click
 
 from distutils.dir_util import copy_tree
 
-from .kube import Kube, KubeKilledException
+from .kube import Kube, KubeKilledException,KubeException
 
+from metaflow import decorators
+from metaflow.graph import FlowGraph
 from metaflow.datastore import MetaflowDataStore
+from metaflow import parameters
+from metaflow.package import MetaflowPackage
+from functools import wraps
+from metaflow import namespace
 from metaflow.datastore.local import LocalDataStore
 from metaflow.datastore.util.s3util import get_s3_client
 from metaflow.metaflow_config import DATASTORE_LOCAL_DIR
@@ -266,3 +272,123 @@ def step(
         _sync_metadata(echo, ctx.obj.metadata, datastore_root, retry_count)
         sys.exit(METAFLOW_EXIT_DISALLOW_RETRY)
     _sync_metadata(echo, ctx.obj.metadata, datastore_root, retry_count)
+
+
+def before_run(obj, tags, decospecs):
+    # There's a --with option both at the top-level and for the run
+    # subcommand. Why?
+    #
+    # "run --with shoes" looks so much better than "--with shoes run".
+    # This is a very common use case of --with.
+    #
+    # A downside is that we need to have the following decorators handling
+    # in two places in this module and we need to make sure that
+    # _init_decorators doesn't get called twice.
+    if decospecs:
+        decorators._attach_decorators(obj.flow, decospecs)
+        obj.graph = FlowGraph(obj.flow.__class__)
+    obj.check(obj.graph, obj.flow, obj.environment, pylint=obj.pylint)
+    #obj.environment.init_environment(obj.logger)
+
+    if obj.datastore.datastore_root is None:
+        obj.datastore.datastore_root = obj.datastore.get_datastore_root_from_config(obj.echo)
+
+    decorators._init_decorators(
+        obj.flow, obj.graph, obj.environment, obj.datastore, obj.logger)
+    obj.metadata.add_sticky_tags(tags=tags)
+
+    # Package working directory only once per run.
+    # We explicitly avoid doing this in `start` since it is invoked for every
+    # step in the run.
+    # TODO(crk): Capture time taken to package and log to keystone.
+    obj.package = MetaflowPackage(obj.flow, obj.environment, obj.logger, obj.package_suffixes)
+
+
+
+
+def common_run_options(func):
+    @click.option('--tag',
+                  'tags',
+                  multiple=True,
+                  default=None,
+                  help="Annotate this run with the given tag. You can specify "
+                       "this option multiple times to attach multiple tags in "
+                       "the run.")
+    @click.option('--max-workers',
+                  default=16,
+                  show_default=True,
+                  help='Maximum number of parallel processes.')
+    @click.option('--max-num-splits',
+                  default=100,
+                  show_default=True,
+                  help='Maximum number of splits allowed in a foreach. This '
+                       'is a safety check preventing bugs from triggering '
+                       'thousands of steps inadvertently.')
+    @click.option('--max-log-size',
+                  default=10,
+                  show_default=True,
+                  help='Maximum size of stdout and stderr captured in '
+                       'megabytes. If a step outputs more than this to '
+                       'stdout/stderr, its output will be truncated.')
+    @click.option('--with',
+                  'decospecs',
+                  multiple=True,
+                  help="Add a decorator to all steps. You can specify this "
+                       "option multiple times to attach multiple decorators "
+                       "in steps.")
+    @click.option('--run-id-file',
+                  default=None,
+                  show_default=True,
+                  type=str,
+                  help="Write the ID of this run to the file specified.")
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        return func(*args, **kwargs)
+    return wrapper
+
+
+@cli.group(help='Command related to running entire Metaflow Native runtime in a container on Kubernetes')
+def kube_deploy():
+    pass
+
+@parameters.add_custom_parameters
+@kube_deploy.command(help='Run the workflow In a container on Kubernetes.')
+@common_run_options
+@click.pass_obj
+def native(
+    ctx,
+    tags=None,
+    max_workers=None,
+    max_num_splits=None,
+    max_log_size=None,
+    decospecs=None,
+    run_id_file=None,
+    user_namespace=None,**kwargs):
+    
+    def echo(batch_id, msg, stream=sys.stdout):
+        ctx.obj.echo_always("[%s] %s" % (batch_id, msg))
+    print(kwargs)
+    if namespace is not None:
+        namespace(user_namespace or None)
+    
+    before_run(ctx, tags, decospecs + ctx.environment.decospecs())
+
+    supported_datastore = ['s3']
+    if ctx.metadata.TYPE != 'service':
+        raise KubeException('Need Service Based Metadata Provider to Make run happen on Kubernetes')
+
+    if ctx.datastore.TYPE not in supported_datastore: 
+        raise KubeException('Kubernetes Deployment supports {} as Datastores and not {}'.format(' '.join(supported_datastore),ctx.datastore.TYPE))
+
+    if ctx.datastore.datastore_root is None:
+        ctx.datastore.datastore_root = ctx.datastore.get_datastore_root_from_config(echo)
+
+    executable = ctx.environment.executable('start')        
+    entrypoint = "%s -u %s" % (executable, os.path.basename(sys.argv[0]))
+    
+    run_args = " ".join(util.dict_to_cli_options(kwargs))
+    print(run_args)
+    print(ctx.datastore)
+    ## Sync Items to datastore and retrieve them on the 
+
+    

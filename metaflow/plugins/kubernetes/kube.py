@@ -247,3 +247,6 @@ class Kube(object):
                 self.job.id,
                 'Task finished with status %s.' % self.job.status
             )
+
+    def launch_run(self):
+        pass

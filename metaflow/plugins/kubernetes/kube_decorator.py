@@ -7,7 +7,7 @@ import tarfile
 from metaflow.datastore import MetaflowDataStore
 from metaflow.datastore.datastore import TransformableObject
 from metaflow.datastore.util.s3util import get_s3_client
-from metaflow.decorators import StepDecorator
+from metaflow.decorators import StepDecorator, FlowDecorator
 from metaflow.metaflow_config import DATASTORE_LOCAL_DIR
 from metaflow.plugins.timeout_decorator import get_run_time_limit_for_task
 
@@ -24,6 +24,17 @@ except:  # noqa E722
     # python3
     from urllib.parse import urlparse
 
+class KubeFlowDecorator(FlowDecorator):
+    name = 'kube_deploy'
+    
+    def __init__(self, attributes=None, statically_defined=False):
+        super().__init__(attributes=attributes, statically_defined=statically_defined)
+    
+    def flow_init(self, flow, graph, environment, datastore, logger):
+        if datastore.TYPE != 's3':
+            raise KubeException('The *@kube_deploy* decorator requires --datastore=s3.')
+        
+        # return super().flow_init(flow, graph, environment, datastore, logger)
 
 class ResourcesDecorator(StepDecorator):
     """
