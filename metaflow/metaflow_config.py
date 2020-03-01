@@ -180,8 +180,9 @@ KUBE_NAMESPACE = from_conf('METAFLOW_KUBE_NAMESAPCE','default')
 
 def get_kubernetes_client():
     from kubernetes import config
+    import kubernetes.client as kube_client
     Kube_Configured_Api_Client = config.new_client_from_config(config_file=KUBE_CONFIG_FILE_PATH)
-    return Kube_Configured_Api_Client
+    return Kube_Configured_Api_Client,kube_client
     
 
 cached_aws_sandbox_creds = None
