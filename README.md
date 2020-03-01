@@ -25,5 +25,8 @@ There are several ways to get in touch with us:
 * Email us at: help@metaflow.org
 * Chat with us on: http://chat.metaflow.org 
 
-## Kubernetes Plugin Documentation 
+## Kubernetes Plugin Documentation / Demo
 https://github.com/valayDave/metaflow-kube-demo
+
+## How to Setup Kuberentes to Work with Metaflow 
+https://github.com/valayDave/metaflow-on-kubernetes-docs
