@@ -87,7 +87,10 @@ class KubeDeployRuntime(object):
         self._datastore.datastore_root = self._datastore.datastore_root+self.deployment_store_prefix 
         self._ds = None
         self.deployment_id = None
+        env_inf = self._environment.get_environment_info()
+        self.docker_image = 'python:'+ env_inf['python_version_code'] # $ todo: support conda. 
 
+        self.needed_env_var = {}
         self._max_workers = max_workers
         self._max_num_splits = max_num_splits
         self._max_log_size = max_log_size
@@ -128,16 +131,45 @@ class KubeDeployRuntime(object):
             "tar xf job_data.tar"
         ]
     
-    def boostrap_runtime(self):
-        pass
+    # $ This needed to move away from the environment because we need to isolate the runtime. 
+    def get_package_commands(self, code_package_url):
+        cmds = ["set -e",
+                "echo \'Setting up task environment.\'",
+                "%s -m pip install awscli click requests boto3 \
+                    --user -qqq" % self._python(),
+                "mkdir metaflow",
+                "cd metaflow",
+                "i=0; while [ $i -le 5 ]; do "
+                    "echo \'Downloading code package.\'; "
+                    "%s -m awscli s3 cp %s job.tar >/dev/null && \
+                        echo \'Code package downloaded.\' && break; "
+                    "sleep 10; i=$((i+1));"
+                "done " % (self._python(), code_package_url),
+                "tar xf job.tar"
+                ]
+        return cmds
+
+    def _python(self):
+        return "python"
+
+    # $ no environment related tasks are carried instead an image is used with conda to ensure conda is runnanble.
+    # $ In case of metaflow, it tires to scope the environment of each 
+    def bootstrap_environment(self,evnironment):
+        if evnironment.TYPE == 'conda':
+            self.docker_image = 'continuumio/miniconda3'
+            self.needed_env_var['CONDA_CHANNELS'] = 'conda-forge'
+            return []
+        
+        return []
+        
 
     # $ This will Generate the Packaged Environment to Run on Kubernetes
     def _command(self, code_package_url, environment, runtime_cli,data_package_url):
-        cmds = environment.get_package_commands(code_package_url)
+        cmds = self.get_package_commands(code_package_url)
         # $ Added this line because its not present in the batch. 
-        cmds.extend(["%s -m pip install kubernetes --user -qqq" % environment._python()])
+        cmds.extend(["%s -m pip install kubernetes --user -qqq" % self._python()])
         # TODO ENVIRONMENT Bootstrap Commands is Not working right Now Because of no ENV ID. -> Need to Fix that soon. 
-        # cmds.extend(environment.bootstrap_commands('start'))
+        cmds.extend(self.bootstrap_environment(environment))
         data_init_commands = self._datainitialization_commands(environment,data_package_url)
         cmds.extend(data_init_commands)
         cmds.append("echo 'Task is starting'")
@@ -221,15 +253,8 @@ class KubeDeployRuntime(object):
                 - job_type : This is to differentiate between subjobs and runtime jobs running on kube. 
 
             - Setting static docker image because we want to replicate the runtime on a container.
-              to ideally run a Nativeruntime one should have a Python:version_num based image. 
-                
-                - # $ todo : Support conda based environment for deployment/IE : boostraping Conda. Or Is boostraping conda even Necessary ? 
-
-                - # $ Bootstrap Commands is Not working right Now Because of no ENV ID. -> Need to Fix that soon. 
-            
+              to ideally run a Nativeruntime one should have a Python:version_num based image.             
         """
-        env_inf = self._environment.get_environment_info()
-        docker_image = 'python:'+ env_inf['python_version_code'] # $ todo: support conda. 
         
         kube_job = self._client.job()
         kube_job \
@@ -252,7 +277,7 @@ class KubeDeployRuntime(object):
                 .environment_variable('AWS_SESSION_TOKEN', AWS_SESSION_TOKEN) \
                 .environment_variable('AWS_DEFAULT_REGION', AWS_DEFAULT_REGION) \
                 .environment_variable('METAFLOW_KUBE_RUNTIME_IN_CLUSTER','yes') \
-                .image(docker_image) \
+                .image(self.docker_image) \
                 .max_cpu(self.max_runtime_cpu) \
                 .max_memory(self.max_runtime_memory) \
                 .meta_data_label('user', attrs['metaflow.user']) \
@@ -263,6 +288,8 @@ class KubeDeployRuntime(object):
         
         self._logger(head='Deploying Metaflow Runtime on Kuberenetes')
         for name, value in env.items():
+            kube_job.environment_variable(name, value)
+        for name,value in self.needed_env_var.items():
             kube_job.environment_variable(name, value)
 
         for name, value in self._metadata.get_runtime_environment('kube').items():

@@ -353,7 +353,7 @@ def kube_deploy():
 @click.option('--dont-exit', 'dont_exit', is_flag=True, help='This will keep running the Deploy for log tailing even after it is done')
 @click.option('--kube-namespace', 'kube_namespace', default=None, help='This will keep running the Deploy for log tailing even after it is done')
 @click.option('--max-runtime-cpu', 'max_runtime_cpu', default=3, help='This is the number of CPUs to allocated to the job that will run the native runtime')
-@click.option('--max-runtime-memory', 'max_runtime_memory', default=2000, help='This is the amout of Memory to allocated to the job that will run the native runtime')
+@click.option('--max-runtime-memory', 'max_runtime_memory', default=2000, help='This is the amount of Memory to allocated to the job that will run the native runtime')
 @click.pass_context
 def run(
         ctx1,
@@ -395,9 +395,8 @@ def run(
         ctx.datastore.datastore_root = ctx.datastore.get_datastore_root_from_config(
             echo)
 
-    executable = ctx.environment.executable('start')
+    executable = 'python' # $ Keeping this No Matter Conda Or Someone Else specifying Env. 
     ctx.entrypoint = "%s -u %s" % (executable, os.path.basename(sys.argv[0]))
-
     # Set kube deployment attributes
     attrs = {
         "metaflow.user": util.get_username(),
