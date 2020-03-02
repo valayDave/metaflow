@@ -10,6 +10,7 @@ from distutils.dir_util import copy_tree
 
 from .kube import Kube, KubeKilledException, KubeException
 from .deploy.runtime import KubeDeployRuntime
+# from .deploy import runtime_util as deploy_runtime_util
 from metaflow import decorators
 from metaflow.graph import FlowGraph
 
@@ -335,17 +336,7 @@ def common_run_options(func):
                   help='Maximum size of stdout and stderr captured in '
                        'megabytes. If a step outputs more than this to '
                        'stdout/stderr, its output will be truncated.')
-    @click.option('--with',
-                  'decospecs',
-                  multiple=True,
-                  help="Add a decorator to all steps. You can specify this "
-                       "option multiple times to attach multiple decorators "
-                       "in steps.")
-    @click.option('--run-id-file',
-                  default=None,
-                  show_default=True,
-                  type=str,
-                  help="Write the ID of this run to the file specified.")
+
     @wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -360,11 +351,13 @@ def kube_deploy():
 @parameters.add_custom_parameters
 @kube_deploy.command(help='Run the workflow In a container on Kubernetes.')
 @common_run_options
-@click.option('--dont_exit','dont_exit',is_flag=False,help='This will keep running the Deploy for log tailing even after it is done')
+@click.option('--dont-exit','dont_exit',is_flag=True,help='This will keep running the Deploy for log tailing even after it is done')
 @click.option('--kube-namespace','kube_namespace',default=None,help='This will keep running the Deploy for log tailing even after it is done')
-@click.pass_obj
-def native(
-        ctx,
+@click.option('--max-runtime-cpu','max_runtime_cpu',default=3,help='This is the number of CPUs to allocated to the job that will run the native runtime')
+@click.option('--max-runtime-memory','max_runtime_memory',default=2000,help='This is the amout of Memory to allocated to the job that will run the native runtime')
+@click.pass_context
+def run(
+        ctx1,
         tags=None,
         max_workers=None,
         max_num_splits=None,
@@ -374,19 +367,24 @@ def native(
         user_namespace=None,
         dont_exit=None,
         kube_namespace=None,
+        max_runtime_cpu=None,
+        max_runtime_memory=None,
         **kwargs):
+    
+    ctx = ctx1.obj
 
     def echo(batch_id, msg, stream=sys.stdout):
-        ctx.obj.echo_always("[%s] %s" % (batch_id, msg))
+        ctx.echo_always("[%s] %s" % (batch_id, msg))
     # print(kwargs)
     if namespace is not None:
         namespace(user_namespace or None)
-
-    before_run(ctx, tags, decospecs + ctx.environment.decospecs())
+    
+    before_run(ctx, tags, ctx.environment.decospecs())
 
     supported_datastore = ['s3']
-    # if ctx.metadata.TYPE != 'service':
-    #     raise KubeException('Need Service Based Metadata Provider to Make run happen on Kubernetes')
+    
+    if ctx.metadata.TYPE != 'service':
+        raise KubeException('Need Service Based Metadata Provider to Make run happen on Kubernetes')
 
     if ctx.datastore.TYPE not in supported_datastore:
         raise KubeException('Kubernetes Deployment supports {} as Datastores and not {}'.format(
@@ -408,6 +406,24 @@ def native(
         ]
     }
 
+    top_args = " ".join(util.dict_to_cli_options(ctx1.parent.parent.params))
+    
+    step_args = " ".join(util.dict_to_cli_options(kwargs))
+
+    # $ Send partial because the KubeDeployRuntime will find the parameters on its own and 
+    # $ using deploy_runtime_util.get_real_param_values
+    partial_runtime_cli = u"{entrypoint} {top_args} run".format(
+        entrypoint=ctx.entrypoint, top_args=top_args
+    )
+
+    """ 
+    If the value of an input `Parameter` is 'num_training_examples' or 'num-training-examples' the parsed output from 
+    click is num_training_examples. Hence for each step we provide a METAFLOW_INPUT_PATH for retrieving params via metadata provider. 
+    # Problem Over here. This is converting '_' into '-' in param conversion via `util.dict_to_cli_options` hence will use My own Method for param extraction.
+    # The runtime will Use the `persist_parameters()` to pass the params to the docker image sent. 
+    """
+    env = {} # todo : check for env Handling. 
+    # $ Partial cli is sent because the KubeDeployRuntime will extract any data params in the artifacts so that they can be modeled in the same light on the Deployed image
     deploy_runtime = KubeDeployRuntime(ctx.flow,
                                        ctx.graph,
                                        ctx.datastore,
@@ -421,18 +437,27 @@ def native(
                                        max_workers=max_workers,
                                        max_num_splits=max_num_splits,
                                        max_log_size=max_log_size * 1024 * 1024,
-                                       dont_exit=dont_exit,
                                        kube_namespace=kube_namespace,
+                                       partial_runtime_cli=partial_runtime_cli,
+                                       max_runtime_cpu=max_runtime_cpu,
+                                       max_runtime_memory=max_runtime_memory,
                                        **kwargs)
 
     deploy_runtime.persist_runtime(util.get_username())
 
-
-    # ctx.datastore.
-    # print(type(kwargs))
-    # print(run_args)
-    # print(ctx.datastore.datastore_root)
-    # Sync Items to datastore and retrieve them on the
-    # $ Sync Files to a Datasource.
-
-    # $ Use Kube to launch Job with the Specified Launch template.
+    try:
+        deploy_runtime.deploy(attrs=attrs,env=env)
+    except Exception as e:
+        print(e)
+        sys.exit(METAFLOW_EXIT_DISALLOW_RETRY)
+    
+    if dont_exit:
+        try:
+            with ctx.monitor.measure("metaflow.kube-deploy.launch"):
+                deploy_runtime.wait_to_complete(echo=echo)
+        except KubeKilledException:
+            # don't retry killed tasks
+            traceback.print_exc()
+            sys.exit(METAFLOW_EXIT_DISALLOW_RETRY)
+    else:
+        echo("Completed Execution! And Exitiing because of --dont_exit not set.")

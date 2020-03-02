@@ -632,6 +632,7 @@ class Task(object):
     def is_cloned(self):
         return self._is_cloned
 
+    # $ This is where a Task will persist its data in the datastore. 
     def persist(self, flow):
         # this is used to persist parameters before the start step
         flow._task_ok = flow._success = True

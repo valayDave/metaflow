@@ -164,19 +164,36 @@ class KubeJob(object):
         # self.container.command = command
         self.command_value = command
         return self
-
-    def cpu(self, cpu):
-        # $ Allow floating point values for CPU. 
-        if not (isinstance(cpu, (float, unicode, basestring)) and float(cpu) > 0):
+    
+    def _validate_cpu(self,cpu):
+        # $ Allow floating point values for CPU.
+        print(cpu) 
+        if not (isinstance(cpu, (float, unicode, basestring,int)) and float(cpu) > 0):
             raise KubeJobException(
                 'Invalid CPU value ({}); it should be greater than 0'.format(cpu))
+
+    def max_cpu(self,cpu):
+        self._validate_cpu(cpu)
+        self.container.resources.limits['cpu'] = str(float(cpu)*1000)+"m" 
+        return self
+
+    def cpu(self, cpu):
+        self._validate_cpu(cpu)
         self.container.resources.requests['cpu'] = str(float(cpu)*1000)+"m" 
         return self
 
-    def memory(self, mem):
+    def _validate_memory(self,mem):
         if not (isinstance(mem, (int, unicode, basestring)) and int(mem) > 0):
             raise KubeJobException(
                 'Invalid memory value ({}); it should be greater than 0'.format(mem))
+
+    def max_memory(self,mem):
+        self._validate_memory(mem)
+        self.container.resources.limits['memory'] = str(mem)+"Mi"
+        return self
+
+    def memory(self, mem):
+        self._validate_memory(mem)
         self.container.resources.requests['memory'] = str(mem)+"Mi"
         return self
 

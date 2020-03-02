@@ -29,6 +29,9 @@ class KubeKilledException(MetaflowException):
 
 
 class Kube(object):
+
+    job_type = 'step_execution'
+
     def __init__(self, metadata, environment):
         self.metadata = metadata
         self.environment = environment
@@ -171,7 +174,7 @@ class Kube(object):
             .meta_data_label('flow_name', attrs['metaflow.flow_name']) \
             .meta_data_label('task_id', attrs['metaflow.task_id']) \
             .meta_data_label('retry_count', attrs['metaflow.retry_count']) \
-            .meta_data_label('job_type','step_execution') \
+            .meta_data_label('job_type',self.job_type) \
             .namespace(kube_namespace) 
             # $ (TODO) : Set the AWS Keys based Kube Secret references here.
         for name, value in env.items():
@@ -248,7 +251,3 @@ class Kube(object):
                 self.job.id,
                 'Task finished with status %s.' % self.job.status
             )
-
-    def launch_run(self):
-
-        pass

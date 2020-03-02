@@ -724,7 +724,6 @@ def start(ctx,
         echo = echo_always
 
     ctx.obj.version = metaflow_version.get_version()
-    echo('CUSTOM START %s'%'bitch', fg='magenta', bold=True, nl=True)
     echo('Metaflow %s' % ctx.obj.version, fg='magenta', bold=True, nl=False)
     echo(" executing *%s*" % ctx.obj.flow.name, fg='magenta', nl=False)
     echo(" for *%s*" % resolve_identity(), fg='magenta')
@@ -766,7 +765,6 @@ def start(ctx,
                                                   ctx.obj.monitor)
     ctx.obj.datastore = DATASTORES[datastore]
     ctx.obj.datastore_root = datastore_root
-    print("Subcommand : ",ctx.invoked_subcommand)
     if ctx.invoked_subcommand not in ('run', 'resume','kube-deploy'):
         # run/resume are special cases because they can add more decorators with --with,
         # so they have to take care of themselves.
