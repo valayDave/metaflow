@@ -167,7 +167,6 @@ class KubeJob(object):
     
     def _validate_cpu(self,cpu):
         # $ Allow floating point values for CPU.
-        print(cpu) 
         if not (isinstance(cpu, (float, unicode, basestring,int)) and float(cpu) > 0):
             raise KubeJobException(
                 'Invalid CPU value ({}); it should be greater than 0'.format(cpu))

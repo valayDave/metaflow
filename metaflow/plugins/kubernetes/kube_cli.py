@@ -336,7 +336,6 @@ def common_run_options(func):
                   help='Maximum size of stdout and stderr captured in '
                        'megabytes. If a step outputs more than this to '
                        'stdout/stderr, its output will be truncated.')
-
     @wraps(func)
     def wrapper(*args, **kwargs):
         return func(*args, **kwargs)
@@ -351,10 +350,10 @@ def kube_deploy():
 @parameters.add_custom_parameters
 @kube_deploy.command(help='Run the workflow In a container on Kubernetes.')
 @common_run_options
-@click.option('--dont-exit','dont_exit',is_flag=True,help='This will keep running the Deploy for log tailing even after it is done')
-@click.option('--kube-namespace','kube_namespace',default=None,help='This will keep running the Deploy for log tailing even after it is done')
-@click.option('--max-runtime-cpu','max_runtime_cpu',default=3,help='This is the number of CPUs to allocated to the job that will run the native runtime')
-@click.option('--max-runtime-memory','max_runtime_memory',default=2000,help='This is the amout of Memory to allocated to the job that will run the native runtime')
+@click.option('--dont-exit', 'dont_exit', is_flag=True, help='This will keep running the Deploy for log tailing even after it is done')
+@click.option('--kube-namespace', 'kube_namespace', default=None, help='This will keep running the Deploy for log tailing even after it is done')
+@click.option('--max-runtime-cpu', 'max_runtime_cpu', default=3, help='This is the number of CPUs to allocated to the job that will run the native runtime')
+@click.option('--max-runtime-memory', 'max_runtime_memory', default=2000, help='This is the amout of Memory to allocated to the job that will run the native runtime')
 @click.pass_context
 def run(
         ctx1,
@@ -370,21 +369,23 @@ def run(
         max_runtime_cpu=None,
         max_runtime_memory=None,
         **kwargs):
-    
+
     ctx = ctx1.obj
 
     def echo(batch_id, msg, stream=sys.stdout):
-        ctx.echo_always("[%s] %s" % (batch_id, msg))
+        ctx.logger(head='[%s] '%batch_id,body=msg)
+        # ctx.echo_always("[%s] %s" % (batch_id, msg))
     # print(kwargs)
     if namespace is not None:
         namespace(user_namespace or None)
-    
+
     before_run(ctx, tags, ctx.environment.decospecs())
 
     supported_datastore = ['s3']
-    
+
     if ctx.metadata.TYPE != 'service':
-        raise KubeException('Need Service Based Metadata Provider to Make run happen on Kubernetes')
+        raise KubeException(
+            'Need Service Based Metadata Provider to Make run happen on Kubernetes')
 
     if ctx.datastore.TYPE not in supported_datastore:
         raise KubeException('Kubernetes Deployment supports {} as Datastores and not {}'.format(
@@ -407,10 +408,10 @@ def run(
     }
 
     top_args = " ".join(util.dict_to_cli_options(ctx1.parent.parent.params))
-    
+
     step_args = " ".join(util.dict_to_cli_options(kwargs))
 
-    # $ Send partial because the KubeDeployRuntime will find the parameters on its own and 
+    # $ Send partial because the KubeDeployRuntime will find the parameters on its own and
     # $ using deploy_runtime_util.get_real_param_values
     partial_runtime_cli = u"{entrypoint} {top_args} run".format(
         entrypoint=ctx.entrypoint, top_args=top_args
@@ -422,7 +423,7 @@ def run(
     # Problem Over here. This is converting '_' into '-' in param conversion via `util.dict_to_cli_options` hence will use My own Method for param extraction.
     # The runtime will Use the `persist_parameters()` to pass the params to the docker image sent. 
     """
-    env = {} # todo : check for env Handling. 
+    env = {}  # todo : check for env Handling.
     # $ Partial cli is sent because the KubeDeployRuntime will extract any data params in the artifacts so that they can be modeled in the same light on the Deployed image
     deploy_runtime = KubeDeployRuntime(ctx.flow,
                                        ctx.graph,
@@ -444,20 +445,14 @@ def run(
                                        **kwargs)
 
     deploy_runtime.persist_runtime(util.get_username())
-
     try:
-        deploy_runtime.deploy(attrs=attrs,env=env)
-    except Exception as e:
-        print(e)
-        sys.exit(METAFLOW_EXIT_DISALLOW_RETRY)
-    
-    if dont_exit:
-        try:
-            with ctx.monitor.measure("metaflow.kube-deploy.launch"):
+        with ctx.monitor.measure("metaflow.kube-deploy.launch"):
+            deploy_runtime.deploy(attrs=attrs, env=env)
+            if dont_exit:
                 deploy_runtime.wait_to_complete(echo=echo)
-        except KubeKilledException:
-            # don't retry killed tasks
-            traceback.print_exc()
-            sys.exit(METAFLOW_EXIT_DISALLOW_RETRY)
-    else:
-        echo("Completed Execution! And Exitiing because of --dont_exit not set.")
+            else:
+                echo(deploy_runtime.job.id,"Metaflow Runtime Deployed On Kubernetes. Exiting because of --dont_exit not set.")
+    except KubeKilledException:
+        # don't retry killed tasks
+        traceback.print_exc()
+        sys.exit(METAFLOW_EXIT_DISALLOW_RETRY)

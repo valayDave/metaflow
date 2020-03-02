@@ -98,6 +98,7 @@ class KubeDeployRuntime(object):
 
         self._supplied_kwargs = kwargs
         self._send_kwargs = {}
+        
         # collect files for syncing so that they can be placed in the datastore and extracted in the container.     
 
         for arg in kwargs: # This is done so that we have either a path or param to deal with when building CLI args.The _send_kwargs method will have all the data. 
@@ -165,12 +166,15 @@ class KubeDeployRuntime(object):
         self._datastore.datastore_root = self._datastore.datastore_root + self.deployment_id
         self._ds = self._datastore(self._flow.name,mode='w')
         # $ Create a way to persist the runtime by changing the file based Params to defaults
+        self._logger('Persisting Parameters')
         self._persist_params()
+        self._logger('Saving Code Packages')
         # $ save packages to extract later. 
         self._save_package_once(self._ds,self._package)
         # print("Package Saved at : ",self.package_url)
         # $ Set data artifact storage to datastore. 
         # $ Syncing Data artifacts in a way that they follow Path defaults. 
+        self._logger('Persisting File Artifacts')
         self.include_artifact_url = self._save_artifacts(self._ds)
 
     def _persist_params(self):
@@ -256,7 +260,8 @@ class KubeDeployRuntime(object):
                 .meta_data_label('job_type',self.job_type) \
                 .namespace(self._kube_namespace) 
                 # $ (TODO) : Set the AWS Keys based Kube Secret references here.
-                
+        
+        self._logger(head='Deploying Metaflow Runtime on Kuberenetes')
         for name, value in env.items():
             kube_job.environment_variable(name, value)
 
@@ -290,17 +295,16 @@ class KubeDeployRuntime(object):
             
 
     def wait_to_complete(self,echo=None):
-        def wait_for_launch(job):
+        def wait_for_launch(job,logger):
             status = job.status
-            echo(job.id, 'Task is starting (status %s)...' % status)
+            echo(job.id,'Task is starting (status %s)...' % status)
             t = time.time()
             while True:
                 if status != job.status or (time.time()-t) > 30:
                     status = job.status
-                    echo(
-                        self.job.id,
-                        'Task is starting (status %s)...' % status
-                    )
+                    echo(job.id,'Task is starting (status %s)...' % status)
+                    # logger(body=util.to_unicode('Task is starting (status %s)...' % status),head=job.id)
+                    # logger('[{job_id}] {line}'.format(job_id=job.id,line=util.to_unicode('Task is starting (status %s)...' % status)),head=True)
                     t = time.time()
                 if self.job.is_running or self.job.is_done or self.job.is_crashed:
                     break
@@ -309,12 +313,14 @@ class KubeDeployRuntime(object):
         def print_all(tail):
             for line in tail:
                 if line:
-                    echo(self.job.id, util.to_unicode(line))
+                    echo(self.job.id,line)
+                    # self._logger(body=util.to_unicode(line),head=self.job.id)
+                    # self._logger('[{job_id}] {line}'.format(job_id=self.job.id,line=util.to_unicode(line))) 
                 else:
                     return tail, False
             return tail, True
 
-        wait_for_launch(self.job)
+        wait_for_launch(self.job,self._logger)
         
         # $ (TODO) : This may have issues. Check this During Time of Execution.
         logs = self.job.logs()
@@ -347,10 +353,10 @@ class KubeDeployRuntime(object):
             if self.job.is_running:
                 # Kill the job if it is still running by throwing an exception.
                 raise KubeException("Task failed!")
-            echo(
-                self.job.id,
-                'Task finished with status %s.' % self.job.status
-            )
+            
+            echo(self.job.id,'Task Finshed with (status %s)...' % self.job.status)
+            # self._logger(body=util.to_unicode('Task Finshed with (status %s)...' % self.job.status),head=self.job.id)
+            # self._logger('[{job_id}] {line}'.format(job_id=self.job.id,line=util.to_unicode('Task Finshed with (status %s)...' % self.job.status)),head=True)
 
     
 
