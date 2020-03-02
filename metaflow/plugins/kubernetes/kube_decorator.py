@@ -24,7 +24,6 @@ except:  # noqa E722
     # python3
     from urllib.parse import urlparse
 
-
 class ResourcesDecorator(StepDecorator):
     """
     Step decorator to specify the resources needed when executing this step.
