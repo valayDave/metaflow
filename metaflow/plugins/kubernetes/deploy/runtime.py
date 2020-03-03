@@ -91,7 +91,8 @@ class KubeDeployRuntime(object):
         # $ Set new Datastore Root here for saving data related to this deployment here. 
         self.max_runtime_cpu= max_runtime_cpu
         self.max_runtime_memory= max_runtime_memory
-        self._datastore.datastore_root = self._datastore.datastore_root+self.deployment_store_prefix 
+        if self._datastore.datastore_root:
+            self._datastore.datastore_root = self._datastore.datastore_root+self.deployment_store_prefix 
         self._ds = None
         self.deployment_id = None
         env_inf = self._environment.get_environment_info()
@@ -123,7 +124,7 @@ class KubeDeployRuntime(object):
         return '{user}-{flow_name}-{date_str}'.format(
             user=str.lower(user),
             flow_name=str.lower(flow_name),
-            date_str=datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            date_str=datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
         ) 
 
     # $ (TODO):Make it Flexible for Other cloud Providers 
@@ -397,26 +398,37 @@ class KubeDeployRuntime(object):
 
     
 
-    def list_jobs(self,flow_name,username,echo):
-        jobs = self._search_jobs(flow_name, username)
+    def list_jobs(self,username=None,echo=None):
+        jobs = self._search_jobs(username)
         if jobs:
+            echo('Listing Runtime Deployed on Kubernetes',fg='green',nl=True)
             for job in jobs:
+                echo('',nl=True)
                 job_name = self._name_str(job.labels['user'],job.labels['flow_name'])+'-'+self.job_type
-                echo(
-                    '{name} [{id}] ({status})'.format(
-                        name=job_name, id=job.id, status=job.status
-                    )
-                )
+                echo('Job Name : ',nl=False,fg='magenta')
+                echo(job_name,nl=False,fg='green')
+                echo('',nl=True)
+                echo('Job Identifier : ',nl=False,fg='magenta')
+                echo(job.name,nl=False,fg='green')
+                echo('',nl=True)
+                echo('Job Status : ',nl=False,fg='magenta')
+                if job.status == 'FAILED':
+                    echo('{status}'.format(status=job.status),nl=False,fg='red')
+                elif job.status == 'COMPLETED':
+                    echo('{status}'.format(status=job.status),nl=False,fg='green')
+                else:
+                    echo('{status}'.format(status=job.status),nl=False,fg='green')
+                echo('',nl=True)
         else:
-            echo('No running Kube jobs found.')
+            echo('No running Kube jobs found.',nl=False,fg='magenta')
 
 
-    def _search_jobs(self, flow_name, user): # $ The Function Works.
+    def _search_jobs(self,user): # $ The Function Works.
         """_search_jobs [Searches the jobs on Kubernetes. These will be runtime_execution jobs.]
         :rtype: [List[KubeJobSpec]]
         """
         # todo : throw error if there is no flow name
-        search_object = {'flow_name': flow_name,'job_type':'runtime_execution'}
+        search_object = {'flow_name': self._flow.name,'job_type':'runtime_execution'}
         if user is not None:
             search_object['user'] = user
         jobs = []

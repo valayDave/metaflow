@@ -254,6 +254,15 @@ class KubeJobSpec(object):
     """
     def __init__(self,api_client=None,kube_client=None,job_name=None,namespace=None,dont_update=False):
         super().__init__()
+        try:
+            from kubernetes.client.rest import ApiException
+        except:
+            raise KubeJobException(
+                'Could not import module \'kubernetes\' which '
+                'is required for Kubernetes batch jobs. Install kubernetes '
+                'first.'
+            )
+        self.API_EXCEPTION = ApiException
         self._kube_client = kube_client
         self._client = api_client
         self._batch_api_client = self._kube_client.BatchV1Api(self._client)
@@ -279,7 +288,7 @@ class KubeJobSpec(object):
         try:
             # $ https://github.com/kubernetes-client/python/blob/master/kubernetes/docs/BatchV1Api.md#read_namespaced_job
             data = self._batch_api_client.read_namespaced_job(self.name,self.namespace)
-        except ApiException as e :
+        except self.API_EXCEPTION as e :
             if self.updated: # $ This is to handle the case when jobs killed via CLI and The runtime is stuck in execution
                 if e.status == 404:
                     self.job_deleted = True
