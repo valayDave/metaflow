@@ -280,7 +280,7 @@ def step(
     _sync_metadata(echo, ctx.obj.metadata, datastore_root, retry_count)
 
 
-def before_run(obj, tags, decospecs):
+def before_deploy(obj, tags, decospecs):
     # There's a --with option both at the top-level and for the run
     # subcommand. Why?
     #
@@ -302,7 +302,6 @@ def before_run(obj, tags, decospecs):
 
     decorators._init_decorators(
         obj.flow, obj.graph, obj.environment, obj.datastore, obj.logger)
-    obj.metadata.add_sticky_tags(tags=tags)
 
     # Package working directory only once per run.
     # We explicitly avoid doing this in `start` since it is invoked for every
@@ -346,12 +345,12 @@ def common_run_options(func):
 def kube_deploy():
     pass
 
-
+# $ Note : Order of Decorators Matter A LOT!
 @parameters.add_custom_parameters
-@kube_deploy.command(help='Run the workflow In a container on Kubernetes.')
+@kube_deploy.command(help='Run the workflow\'s runtime In a container on Kubernetes which will orchestrate the ')
 @common_run_options
 @click.option('--dont-exit', 'dont_exit', is_flag=True, help='This will keep running the Deploy for log tailing even after it is done')
-@click.option('--kube-namespace', 'kube_namespace', default=None, help='This will keep running the Deploy for log tailing even after it is done')
+@click.option('--kube-namespace', 'kube_namespace', default=None, help='This will use Kube namespace to deploy the runtime and the susequent step based containers for the workflow')
 @click.option('--max-runtime-cpu', 'max_runtime_cpu', default=3, help='This is the number of CPUs to allocated to the job that will run the native runtime')
 @click.option('--max-runtime-memory', 'max_runtime_memory', default=2000, help='This is the amount of Memory to allocated to the job that will run the native runtime')
 @click.pass_context
@@ -379,7 +378,7 @@ def run(
     if namespace is not None:
         namespace(user_namespace or None)
 
-    before_run(ctx, tags, ctx.environment.decospecs())
+    before_deploy(ctx, tags, ctx.environment.decospecs())
 
     supported_datastore = ['s3']
 
@@ -450,8 +449,32 @@ def run(
             if dont_exit:
                 deploy_runtime.wait_to_complete(echo=echo)
             else:
-                echo(deploy_runtime.job.id,"Metaflow Runtime Deployed On Kubernetes. Exiting because of --dont_exit not set.")
+                echo(deploy_runtime.job.name,"Metaflow Runtime Deployed On Kubernetes. Exiting because of --dont_exit not set.")
     except KubeKilledException:
         # don't retry killed tasks
         traceback.print_exc()
         sys.exit(METAFLOW_EXIT_DISALLOW_RETRY)
+
+@kube_deploy.command(help="List the currently running step orchestrators")
+@click.option('--user','user',help='List filtered by according to user',default=None)
+@click.option('--kube-namespace','kube_namespace',help='Namespace to search while finding this Job')
+@click.pass_context
+def list(ctx1,user=None,flow=None,kube_namespace=None):
+    ctx = ctx1.obj
+    deploy_rt = KubeDeployRuntime( ctx.flow,
+                                ctx.graph,                                      
+                                ctx.datastore,
+                                ctx.metadata,
+                                ctx.environment,
+                                None,
+                                ctx.logger,
+                                ctx.entrypoint,
+                                ctx.event_logger,
+                                ctx.monitor,
+                                kube_namespace=kube_namespace)
+    if user:
+        deploy_rt.list_jobs(username=user,echo=ctx.echo)
+    else:
+        deploy_rt.list_jobs(echo=ctx.echo)
+        
+    

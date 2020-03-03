@@ -32,13 +32,20 @@ from . import runtime_util
 LETTER_CHOICES = string.ascii_letters+string.digits
 
 class KubeDeployRuntime(object):
-    """KubeDeployRuntime [summary]
-    
-    :param object: [description]
-    :type object: [type]
-    :raises KubeException: [description]
-    :return: [description]
-    :rtype: [type]
+    """KubeDeployRuntime 
+    This is a class dedicated to deploying a packaged Metaflow Runtime container that will orchestrate the DAG using Kubernetes Jobs. 
+    Key Methods : 
+        - __init__ : Sets the main properties of the Object. 
+        - persist_runtime : Needs to be explicitly called. It will ensure that file based data artifacts, parameters, code package is persisted for retrieval on container.  
+        - deploy : This method will spawn a KubeJob object which will take the set necessary parameters to deploy to Kubernetes
+    Key Assumptions : 
+        - Conda is needed to isolate the environment of the step. So deploying runtime in an miniconda3 docker image satisfies the dependency management needed for working with conda.
+        - The runtime is only orchestrating tasks and syncing when to run the next task. 
+            - If dependencies/environment for the tasks are isolated by the docker image provided in @kube / --with then the runtime doesn't require any more deps than given in the `get_package_commands`
+        - inherits environment variables like METAFLOW_KUBE_NAMESAPCE for containers running with same Namespace.
+    Key Constraint : 
+        - Coupled with S3. Not so thightly coupled but coupled in the setup process of the containers. 
+        - Ideally provide python:x.y as image in `--with` when running with --environment=conda
     """
     deployment_store_prefix = '/kube_deployment/'
     include_data_store = '/include_artifacts/'
@@ -84,7 +91,8 @@ class KubeDeployRuntime(object):
         # $ Set new Datastore Root here for saving data related to this deployment here. 
         self.max_runtime_cpu= max_runtime_cpu
         self.max_runtime_memory= max_runtime_memory
-        self._datastore.datastore_root = self._datastore.datastore_root+self.deployment_store_prefix 
+        if self._datastore.datastore_root:
+            self._datastore.datastore_root = self._datastore.datastore_root+self.deployment_store_prefix 
         self._ds = None
         self.deployment_id = None
         env_inf = self._environment.get_environment_info()
@@ -116,7 +124,7 @@ class KubeDeployRuntime(object):
         return '{user}-{flow_name}-{date_str}'.format(
             user=str.lower(user),
             flow_name=str.lower(flow_name),
-            date_str=datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            date_str=datetime.datetime.now().strftime('%Y-%m-%d-%H:%M:%S')
         ) 
 
     # $ (TODO):Make it Flexible for Other cloud Providers 
@@ -153,7 +161,8 @@ class KubeDeployRuntime(object):
         return "python"
 
     # $ no environment related tasks are carried instead an image is used with conda to ensure conda is runnanble.
-    # $ In case of metaflow, it tires to scope the environment of each 
+    # $ In case of metaflow, it tires to scope the environment of each step. We are ensuring that using Conda and Images with `--with`
+    # $ So ensuring the Native runtime works, Python supported image is only needed. 
     def bootstrap_environment(self,evnironment):
         if evnironment.TYPE == 'conda':
             self.docker_image = 'continuumio/miniconda3'
@@ -163,12 +172,11 @@ class KubeDeployRuntime(object):
         return []
         
 
-    # $ This will Generate the Packaged Environment to Run on Kubernetes
+    # $ This will Generate the Packaged Environment to Run on Kubernetes --> Packaging is simple. There is either conda or a Docker image. For th runtime it doesn't matter. 
     def _command(self, code_package_url, environment, runtime_cli,data_package_url):
         cmds = self.get_package_commands(code_package_url)
         # $ Added this line because its not present in the batch. 
         cmds.extend(["%s -m pip install kubernetes --user -qqq" % self._python()])
-        # TODO ENVIRONMENT Bootstrap Commands is Not working right Now Because of no ENV ID. -> Need to Fix that soon. 
         cmds.extend(self.bootstrap_environment(environment))
         data_init_commands = self._datainitialization_commands(environment,data_package_url)
         cmds.extend(data_init_commands)
@@ -187,7 +195,7 @@ class KubeDeployRuntime(object):
 
 
     def persist_runtime(self,username):
-        """initiate 
+        """persist_runtime 
         - create a deployment ID 
         - sync dependencies into datastore under the deployment_id
         - Persist Params in a way that they replicate the real param names on the kube runtime.(file path defaults are set here.)
@@ -237,23 +245,25 @@ class KubeDeployRuntime(object):
 
     def deploy(self,attrs=None,env=None):
         """deploy 
-        runs after persist_runtime() so checks for necessary artifacts being present.
-        It will create a kubernetes job spec that will run the native runtime inside isolated container. 
-        Some conditions : 
-            - Explicitly set ENV Vars for : 
-                - METAFLOW_DEFAULT_METADATA : service (Inside Kubecluster local metadata provider is not easy to manage.
-                                                     SO currently only service based support.)
-                
-                - METAFLOW_DEFAULT_DATASTORE : As the Datastore allowed via CLI
+            runs after persist_runtime() so checks for necessary artifacts being present.
+            It will create a kubernetes job spec that will run the native runtime inside isolated container. 
+            Some conditions : 
+                - Explicitly set ENV Vars for : 
+                    - METAFLOW_DEFAULT_METADATA : service (Inside Kubecluster local metadata provider is not easy to manage.
+                                                        SO currently only service based support.)
+                    
+                    - METAFLOW_DEFAULT_DATASTORE : As the Datastore allowed via CLI
 
-                - KUBE_RUNTIME_IN_CLUSTER : This will ensure correct authentication of the hosts. 
-            
-            - Explicitly set meta_data_label
-                
-                - job_type : This is to differentiate between subjobs and runtime jobs running on kube. 
+                    - METAFLOW_KUBE_NAMESAPCE : This will ensure correct namespace of runtime and its subsequent job deployments. 
 
-            - Setting static docker image because we want to replicate the runtime on a container.
-              to ideally run a Nativeruntime one should have a Python:version_num based image.             
+                    - METAFLOW_KUBE_RUNTIME_IN_CLUSTER : 'yes' --> So that containers can be spawned for steps by runtime from within a container in the cluster 
+                
+                - Explicitly set meta_data_label
+                    
+                    - job_type : This is to differentiate between subjobs and runtime jobs running on kube. 
+
+                - Setting static docker image because we want to replicate the runtime on a container.
+                to ideally run a Nativeruntime one should have a Python:version_num based image.             
         """
         
         kube_job = self._client.job()
@@ -276,6 +286,7 @@ class KubeDeployRuntime(object):
                 .environment_variable('AWS_SECRET_ACCESS_KEY', AWS_SECRET_ACCESS_KEY) \
                 .environment_variable('AWS_SESSION_TOKEN', AWS_SESSION_TOKEN) \
                 .environment_variable('AWS_DEFAULT_REGION', AWS_DEFAULT_REGION) \
+                .environment_variable('METAFLOW_KUBE_NAMESAPCE',self._kube_namespace) \
                 .environment_variable('METAFLOW_KUBE_RUNTIME_IN_CLUSTER','yes') \
                 .image(self.docker_image) \
                 .max_cpu(self.max_runtime_cpu) \
@@ -387,26 +398,37 @@ class KubeDeployRuntime(object):
 
     
 
-    def list_jobs(self,flow_name,username,echo):
-        jobs = self._search_jobs(flow_name, username)
+    def list_jobs(self,username=None,echo=None):
+        jobs = self._search_jobs(username)
         if jobs:
+            echo('Listing Runtime Deployed on Kubernetes',fg='green',nl=True)
             for job in jobs:
+                echo('',nl=True)
                 job_name = self._name_str(job.labels['user'],job.labels['flow_name'])+'-'+self.job_type
-                echo(
-                    '{name} [{id}] ({status})'.format(
-                        name=job_name, id=job.id, status=job.status
-                    )
-                )
+                echo('Job Name : ',nl=False,fg='magenta')
+                echo(job_name,nl=False,fg='green')
+                echo('',nl=True)
+                echo('Job Identifier : ',nl=False,fg='magenta')
+                echo(job.name,nl=False,fg='green')
+                echo('',nl=True)
+                echo('Job Status : ',nl=False,fg='magenta')
+                if job.status == 'FAILED':
+                    echo('{status}'.format(status=job.status),nl=False,fg='red')
+                elif job.status == 'COMPLETED':
+                    echo('{status}'.format(status=job.status),nl=False,fg='green')
+                else:
+                    echo('{status}'.format(status=job.status),nl=False,fg='green')
+                echo('',nl=True)
         else:
-            echo('No running Kube jobs found.')
+            echo('No running Kube jobs found.',nl=False,fg='magenta')
 
 
-    def _search_jobs(self, flow_name, user): # $ The Function Works.
+    def _search_jobs(self,user): # $ The Function Works.
         """_search_jobs [Searches the jobs on Kubernetes. These will be runtime_execution jobs.]
         :rtype: [List[KubeJobSpec]]
         """
         # todo : throw error if there is no flow name
-        search_object = {'flow_name': flow_name,'job_type':'runtime_execution'}
+        search_object = {'flow_name': self._flow.name,'job_type':'runtime_execution'}
         if user is not None:
             search_object['user'] = user
         jobs = []
