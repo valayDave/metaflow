@@ -348,10 +348,10 @@ def kube_deploy():
 
 
 @parameters.add_custom_parameters
-@kube_deploy.command(help='Run the workflow In a container on Kubernetes.')
 @common_run_options
+@kube_deploy.command(help='Run the workflow\'s runtime In a container on Kubernetes which will orchestrate the ')
 @click.option('--dont-exit', 'dont_exit', is_flag=True, help='This will keep running the Deploy for log tailing even after it is done')
-@click.option('--kube-namespace', 'kube_namespace', default=None, help='This will keep running the Deploy for log tailing even after it is done')
+@click.option('--kube-namespace', 'kube_namespace', default=None, help='This will use Kube namespace to deploy the runtime and the susequent step based containers for the workflow')
 @click.option('--max-runtime-cpu', 'max_runtime_cpu', default=3, help='This is the number of CPUs to allocated to the job that will run the native runtime')
 @click.option('--max-runtime-memory', 'max_runtime_memory', default=2000, help='This is the amount of Memory to allocated to the job that will run the native runtime')
 @click.pass_context

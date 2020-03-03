@@ -42,6 +42,7 @@ class KubeDeployRuntime(object):
         - Conda is needed to isolate the environment of the step. So deploying runtime in an miniconda3 docker image satisfies the dependency management needed for working with conda.
         - The runtime is only orchestrating tasks and syncing when to run the next task. 
             - If dependencies/environment for the tasks are isolated by the docker image provided in @kube / --with then the runtime doesn't require any more deps than given in the `get_package_commands`
+        - inherits environment variables like METAFLOW_KUBE_NAMESAPCE for containers running with same Namespace.
     Key Constraint : 
         - Coupled with S3. Not so thightly coupled but coupled in the setup process of the containers. 
         - Ideally provide python:x.y as image in `--with` when running with --environment=conda
@@ -252,7 +253,9 @@ class KubeDeployRuntime(object):
                     
                     - METAFLOW_DEFAULT_DATASTORE : As the Datastore allowed via CLI
 
-                    - KUBE_RUNTIME_IN_CLUSTER : This will ensure correct authentication of the hosts. 
+                    - METAFLOW_KUBE_NAMESAPCE : This will ensure correct namespace of runtime and its subsequent job deployments. 
+
+                    - METAFLOW_KUBE_RUNTIME_IN_CLUSTER : 'yes' --> So that containers can be spawned for steps by runtime from within a container in the cluster 
                 
                 - Explicitly set meta_data_label
                     
@@ -282,6 +285,7 @@ class KubeDeployRuntime(object):
                 .environment_variable('AWS_SECRET_ACCESS_KEY', AWS_SECRET_ACCESS_KEY) \
                 .environment_variable('AWS_SESSION_TOKEN', AWS_SESSION_TOKEN) \
                 .environment_variable('AWS_DEFAULT_REGION', AWS_DEFAULT_REGION) \
+                .environment_variable('METAFLOW_KUBE_NAMESAPCE',self._kube_namespace) \
                 .environment_variable('METAFLOW_KUBE_RUNTIME_IN_CLUSTER','yes') \
                 .image(self.docker_image) \
                 .max_cpu(self.max_runtime_cpu) \
