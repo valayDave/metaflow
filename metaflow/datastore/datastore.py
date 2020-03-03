@@ -606,6 +606,14 @@ class MetaflowDataStore(object):
                          .format(key=k, value=v, **self.info[k])
         return '\n'.join(line for k, line in sorted(lines()))
 
+    @staticmethod
+    def package_download_commands(environment,code_package):
+        """
+        Intended to download the package into a containerised execution for a step. 
+        Static because not make properties of the Datastore are needed. 
+        """
+        raise NotImplementedError()
+
 class ArtifactTooLarge(object):
     def __str__(self):
         return '< artifact too large >'

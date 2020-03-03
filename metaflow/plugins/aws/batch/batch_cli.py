@@ -242,7 +242,7 @@ def step(
             "Sleeping %d minutes before the next Batch retry" % minutes_between_retries
         )
         time.sleep(minutes_between_retries * 60)
-    batch = Batch(ctx.obj.metadata, ctx.obj.environment)
+    batch = Batch(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
     try:
         with ctx.obj.monitor.measure("metaflow.batch.launch"):
             batch.launch_job(

@@ -248,7 +248,7 @@ def step(
             "Sleeping %d minutes before the next Batch retry" % minutes_between_retries
         )
         time.sleep(minutes_between_retries * 60)
-    kube = Kube(ctx.obj.metadata, ctx.obj.environment)
+    kube = Kube(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
     try:
         with ctx.obj.monitor.measure("metaflow.kube.launch"):
             kube.launch_job(

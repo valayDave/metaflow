@@ -129,15 +129,11 @@ class KubeDeployRuntime(object):
 
     # $ (TODO):Make it Flexible for Other cloud Providers 
     def _datainitialization_commands(self,environment,data_package_url):
-        return [
+        cmds = [
             "echo \'Downloading Data depencies.\'",
-            "i=0; while [ $i -le 5 ]; do "
-                    "echo \'Downloading Data package.\'; "
-                    "%s -m awscli s3 cp %s job_data.tar >/dev/null && echo \'Data package downloaded.\' && break;"
-                    "sleep 10; i=$((i+1));"
-            "done " % (environment._python(), data_package_url),
-            "tar xf job_data.tar"
         ]
+        cmds.extend(self._datastore.package_download_commands(self,self.include_artifact_url))
+        return cmds
     
     # $ This needed to move away from the environment because we need to isolate the runtime. 
     def get_package_commands(self, code_package_url):
@@ -147,14 +143,8 @@ class KubeDeployRuntime(object):
                     --user -qqq" % self._python(),
                 "mkdir metaflow",
                 "cd metaflow",
-                "i=0; while [ $i -le 5 ]; do "
-                    "echo \'Downloading code package.\'; "
-                    "%s -m awscli s3 cp %s job.tar >/dev/null && \
-                        echo \'Code package downloaded.\' && break; "
-                    "sleep 10; i=$((i+1));"
-                "done " % (self._python(), code_package_url),
-                "tar xf job.tar"
                 ]
+        cmds.extend(self._datastore.package_download_commands(self,self.package_url))
         return cmds
 
     def _python(self):
