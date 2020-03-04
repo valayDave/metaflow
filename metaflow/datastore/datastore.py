@@ -609,8 +609,9 @@ class MetaflowDataStore(object):
     @staticmethod
     def package_download_commands(environment,code_package):
         """
-        Intended to download the package into a containerised execution for a step. 
-        Static because not make properties of the Datastore are needed. 
+        Intended to download the package inside a container for the execution of a step. 
+        Static because it is a utility method WRT to the datastore child class one defines. 
+        Will be called by the MetaflowEnvironment.get_package_commands
         """
         raise NotImplementedError()
 
