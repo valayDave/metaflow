@@ -64,9 +64,10 @@ class KubeDeployRuntime(object):
                  entrypoint,
                  event_logger,
                  monitor,
-                 max_workers=MAX_WORKERS,
-                 max_num_splits=MAX_NUM_SPLITS,
-                 max_log_size=MAX_LOG_SIZE,
+                 max_workers=None, # Set to None Because unless explictly given as CLI args this will not set anything to deploy CLI args. 
+                 max_num_splits=None,
+                 max_log_size=None,
+                 tags=None,
                  kube_namespace=None,
                  partial_runtime_cli=None,
                  max_runtime_cpu=None,
@@ -108,6 +109,7 @@ class KubeDeployRuntime(object):
         self.include_artifact_url = None
 
         self._supplied_kwargs = kwargs
+        self._tags = tags
         self._send_kwargs = {}
         
         # collect files for syncing so that they can be placed in the datastore and extracted in the container.     
@@ -129,15 +131,11 @@ class KubeDeployRuntime(object):
 
     # $ (TODO):Make it Flexible for Other cloud Providers 
     def _datainitialization_commands(self,environment,data_package_url):
-        return [
+        cmds = [
             "echo \'Downloading Data depencies.\'",
-            "i=0; while [ $i -le 5 ]; do "
-                    "echo \'Downloading Data package.\'; "
-                    "%s -m awscli s3 cp %s job_data.tar >/dev/null && echo \'Data package downloaded.\' && break;"
-                    "sleep 10; i=$((i+1));"
-            "done " % (environment._python(), data_package_url),
-            "tar xf job_data.tar"
         ]
+        cmds.extend(self._datastore.package_download_commands(self,self.include_artifact_url))
+        return cmds
     
     # $ This needed to move away from the environment because we need to isolate the runtime. 
     def get_package_commands(self, code_package_url):
@@ -147,14 +145,8 @@ class KubeDeployRuntime(object):
                     --user -qqq" % self._python(),
                 "mkdir metaflow",
                 "cd metaflow",
-                "i=0; while [ $i -le 5 ]; do "
-                    "echo \'Downloading code package.\'; "
-                    "%s -m awscli s3 cp %s job.tar >/dev/null && \
-                        echo \'Code package downloaded.\' && break; "
-                    "sleep 10; i=$((i+1));"
-                "done " % (self._python(), code_package_url),
-                "tar xf job.tar"
                 ]
+        cmds.extend(self._datastore.package_download_commands(self,self.package_url))
         return cmds
 
     def _python(self):
@@ -239,8 +231,19 @@ class KubeDeployRuntime(object):
 
         runtime_cli_args = ' '.join([' '.join([str(a) for a in arg1]) for arg1 in arguement_lists])
         # $ Setting final CLI Here. 
+        if self._tags is not None:
+            runtime_cli_args+=' '+' '.join(['--tag {}'.format(t)for t in self._tags])
+        
+        if self._max_workers is not None:
+            runtime_cli_args+=' --max-workers {}'.format(self._max_workers)
+
+        if self._max_num_splits is not None:
+            runtime_cli_args+=' --max-num-splits {}'.format(self._max_num_splits)
+
+        if self._max_workers is not None:
+            runtime_cli_args+=' --max-log-size {}'.format(self._max_log_size)
+
         self._final_cli = '{partial_cli} {cli_args}'.format(partial_cli=self._final_cli,cli_args=runtime_cli_args)
-        # print(self._final_cli)
 
 
     def deploy(self,attrs=None,env=None):

@@ -32,16 +32,17 @@ class Kube(object):
 
     job_type = 'step_execution'
 
-    def __init__(self, metadata, environment):
+    def __init__(self, metadata, environment,datastore):
         self.metadata = metadata
         self.environment = environment
         self._client = KubeClient()
+        self.datastore = datastore
         atexit.register(lambda: self.job.kill()
                         if hasattr(self, 'job') else None)
 
     # $ This will Generate the Packaged Environment to Run on Kubernetes
     def _command(self, code_package_url, environment, step_name, step_cli):
-        cmds = environment.get_package_commands(code_package_url)
+        cmds = environment.get_package_commands(code_package_url,self.datastore)
         # $ Added this line because its not present in the batch. 
         cmds.extend(["%s -m pip install kubernetes \
                     --user -qqq" % environment._python()])
@@ -55,7 +56,7 @@ class Kube(object):
         :rtype: [List[KubeJobSpec]]
         """
         # todo : throw error if there is no flow name
-        search_object = {'flow_name': flow_name}
+        search_object = {'flow_name': flow_name,'job_type':'step_execution'}
         if run_id is not None:
             search_object['run_id'] = run_id
         if user is not None:
