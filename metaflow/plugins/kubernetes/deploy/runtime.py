@@ -64,9 +64,10 @@ class KubeDeployRuntime(object):
                  entrypoint,
                  event_logger,
                  monitor,
-                 max_workers=MAX_WORKERS,
-                 max_num_splits=MAX_NUM_SPLITS,
-                 max_log_size=MAX_LOG_SIZE,
+                 max_workers=None, # Set to None Because unless explictly given as CLI args this will not set anything to deploy CLI args. 
+                 max_num_splits=None,
+                 max_log_size=None,
+                 tags=None,
                  kube_namespace=None,
                  partial_runtime_cli=None,
                  max_runtime_cpu=None,
@@ -108,6 +109,7 @@ class KubeDeployRuntime(object):
         self.include_artifact_url = None
 
         self._supplied_kwargs = kwargs
+        self._tags = tags
         self._send_kwargs = {}
         
         # collect files for syncing so that they can be placed in the datastore and extracted in the container.     
@@ -229,8 +231,19 @@ class KubeDeployRuntime(object):
 
         runtime_cli_args = ' '.join([' '.join([str(a) for a in arg1]) for arg1 in arguement_lists])
         # $ Setting final CLI Here. 
+        if self._tags is not None:
+            runtime_cli_args+=' '+' '.join(['--tag {}'.format(t)for t in self._tags])
+        
+        if self._max_workers is not None:
+            runtime_cli_args+=' --max-workers {}'.format(self._max_workers)
+
+        if self._max_num_splits is not None:
+            runtime_cli_args+=' --max-num-splits {}'.format(self._max_num_splits)
+
+        if self._max_workers is not None:
+            runtime_cli_args+=' --max-log-size {}'.format(self._max_log_size)
+
         self._final_cli = '{partial_cli} {cli_args}'.format(partial_cli=self._final_cli,cli_args=runtime_cli_args)
-        # print(self._final_cli)
 
 
     def deploy(self,attrs=None,env=None):
