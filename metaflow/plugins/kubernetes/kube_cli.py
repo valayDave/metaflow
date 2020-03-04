@@ -104,7 +104,7 @@ def _sync_metadata(echo, metadata, datastore_root, attempt):
 @click.option("--run-id", default=None, help="List tasks corresponding to the run id.")
 @click.pass_context
 def list(ctx, run_id, user, my_runs):
-    batch = Kube(ctx.obj.metadata, ctx.obj.environment)
+    batch = Kube(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
     _execute_cmd(
         batch.list_jobs, ctx.obj.flow.name, run_id, user, my_runs, ctx.obj.echo
     )
@@ -118,7 +118,7 @@ def list(ctx, run_id, user, my_runs):
 )
 @click.pass_context
 def kill(ctx, run_id, user, my_runs):
-    kube_1 = Kube(ctx.obj.metadata, ctx.obj.environment)
+    batch = Kube(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
     _execute_cmd(
         kube_1.kill_jobs, ctx.obj.flow.name, run_id, user, my_runs, ctx.obj.echo
     )

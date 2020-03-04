@@ -56,7 +56,7 @@ class Kube(object):
         :rtype: [List[KubeJobSpec]]
         """
         # todo : throw error if there is no flow name
-        search_object = {'flow_name': flow_name}
+        search_object = {'flow_name': flow_name,'job_type':'step_execution'}
         if run_id is not None:
             search_object['run_id'] = run_id
         if user is not None:
