@@ -276,4 +276,3 @@ def step(
         _sync_metadata(echo, ctx.obj.metadata, datastore_root, retry_count)
         sys.exit(METAFLOW_EXIT_DISALLOW_RETRY)
     _sync_metadata(echo, ctx.obj.metadata, datastore_root, retry_count)
-
