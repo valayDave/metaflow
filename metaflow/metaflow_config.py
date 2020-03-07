@@ -176,8 +176,9 @@ def get_pinned_conda_libs():
 
 
 KUBE_CONFIG_FILE_PATH = from_conf('METAFLOW_KUBE_CONFIG_PATH','~/.kube/config')
-KUBE_NAMESPACE = from_conf('METAFLOW_KUBE_NAMESAPCE','default')
+KUBE_NAMESPACE = from_conf('METAFLOW_KUBE_NAMESPACE','default')
 KUBE_RUNTIME_IN_CLUSTER = from_conf('METAFLOW_KUBE_RUNTIME_IN_CLUSTER','no')
+KUBE_SERVICE_ACCOUNT = from_conf('METAFLOW_KUBE_SERVICE_ACCOUNT','default')
 
 def get_kubernetes_client():
     import kubernetes.config as kube_config

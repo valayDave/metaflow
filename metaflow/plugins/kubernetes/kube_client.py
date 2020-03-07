@@ -12,7 +12,7 @@ except NameError:
     basestring = str
 
 from metaflow.exception import MetaflowException
-from metaflow.metaflow_config import get_kubernetes_client,KUBE_NAMESPACE
+from metaflow.metaflow_config import get_kubernetes_client,KUBE_NAMESPACE,KUBE_SERVICE_ACCOUNT
 
 
 MAX_MEMORY = 32*1000
@@ -115,7 +115,7 @@ class KubeJob(object):
         self.container.args = self.command_value[1:]
         self.container.env = self.env_list
 
-        self.template.spec = self._kube_client.V1PodSpec(containers=[self.container],restart_policy='Never')
+        self.template.spec = self._kube_client.V1PodSpec(containers=[self.container],restart_policy='Never',service_account_name=KUBE_SERVICE_ACCOUNT)
         self.payload.spec = self._kube_client.V1JobSpec(ttl_seconds_after_finished=100, template=self.template)
         try: 
             api_response = self._api_client.create_namespaced_job(self.namespace_name,body=self.payload)
