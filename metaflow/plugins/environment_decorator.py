@@ -3,6 +3,7 @@ import os
 from metaflow.exception import MetaflowException
 from metaflow.decorators import StepDecorator,FlowDecorator
 
+# ! BUG DETECTED : THIS DOESNT WORK PROPERLY WHEN STEP LEVEL ENV VARS. 
 class GlobalEnvironmentDecorator(FlowDecorator):
     """
     Flow Decorator to add a general environment variables to ever decorator. 

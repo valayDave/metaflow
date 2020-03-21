@@ -78,6 +78,7 @@ class KubeJob(object):
                 'first.'
             )
         self.API_EXCEPTION = ApiException
+        self.gpu_enabled = False
         self._client = api_client
         self._kube_client = kube_client
         self._api_client = self._kube_client.BatchV1Api(self._client)
@@ -114,8 +115,11 @@ class KubeJob(object):
         self.container.command = [self.command_value[0]]
         self.container.args = self.command_value[1:]
         self.container.env = self.env_list
-
-        self.template.spec = self._kube_client.V1PodSpec(containers=[self.container],restart_policy='Never',service_account_name=KUBE_SERVICE_ACCOUNT)
+        pod_spec = self._kube_client.V1PodSpec(containers=[self.container],restart_policy='Never',service_account_name=KUBE_SERVICE_ACCOUNT)
+        if self.gpu_enabled:
+            pod_spec.tolerations = [self._kube_client.V1Toleration(operator='Exists')]
+        # pod_spec.tolerations = [ self._kube_client.operator ]
+        self.template.spec = pod_spec
         self.payload.spec = self._kube_client.V1JobSpec(ttl_seconds_after_finished=100, template=self.template)
         try: 
             api_response = self._api_client.create_namespaced_job(self.namespace_name,body=self.payload)
@@ -201,8 +205,9 @@ class KubeJob(object):
         if not (isinstance(gpu, (int, unicode, basestring))):
             raise KubeJobException(
                 'invalid gpu value: ({}) (should be 0 or greater)'.format(gpu))
-        if int(gpu) > 0:
-            pass # $ todo : Figure GPU Here. 
+        if int(gpu) > 0: # This is when the cluster is configured with NVIDIA Plugin. 
+            self.container.resources.limits['nvidia.com/gpu'] = int(gpu)
+            self.gpu_enabled = True
         return self
 
     def environment_variable(self, name, value):
