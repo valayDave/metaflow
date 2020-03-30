@@ -116,8 +116,14 @@ class KubeJob(object):
         self.container.args = self.command_value[1:]
         self.container.env = self.env_list
         pod_spec = self._kube_client.V1PodSpec(containers=[self.container],restart_policy='Never',service_account_name=KUBE_SERVICE_ACCOUNT)
-        if self.gpu_enabled:
+
+        if self.gpu_enabled: # When running with GPU's Adding Shared Memory Support.
             pod_spec.tolerations = [self._kube_client.V1Toleration(operator='Exists')]
+            # Shared Volumed Based on https://www.ibm.com/blogs/research/2018/12/training-cloud-small-files/
+            pod_spec.volumes = [
+                self._kube_client.V1Volume(name='shm',empty_dir=self._kube_client.V1EmptyDirVolumeSource(medium='Memory'))   
+            ]
+            self.container.volume_mounts = [self._kube_client.V1VolumeMount(name='shm',mount_path='/dev/shm')]
         # pod_spec.tolerations = [ self._kube_client.operator ]
         self.template.spec = pod_spec
         self.payload.spec = self._kube_client.V1JobSpec(ttl_seconds_after_finished=100, template=self.template)
@@ -439,4 +445,8 @@ class RunningKubeJob(KubeJobSpec):
     
     def delete(self):
         if not self.job_deleted: 
-            self._batch_api_client.delete_namespaced_job(self.name,self.namespace)
+            self._batch_api_client.delete_namespaced_job(\
+                    name=self.name,\
+                    namespace=self.namespace,\
+                    body=self._kube_client.V1DeleteOptions(api_version='v1', kind="DeleteOptions", propagation_policy="Foreground")
+                )
