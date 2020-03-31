@@ -15,8 +15,8 @@ from metaflow.exception import MetaflowException
 from metaflow.metaflow_config import get_kubernetes_client,KUBE_NAMESPACE,KUBE_SERVICE_ACCOUNT
 
 
-MAX_MEMORY = 32*1000
-MAX_CPU = 8
+MAX_MEMORY = 64*1000
+MAX_CPU = 16
 
     
 class KubeClient(object):
@@ -445,6 +445,7 @@ class RunningKubeJob(KubeJobSpec):
     
     def delete(self):
         if not self.job_deleted: 
+            # referenced from : https://github.com/rundeck-plugins/kubernetes/issues/8#issuecomment-399520970
             self._batch_api_client.delete_namespaced_job(\
                     name=self.name,\
                     namespace=self.namespace,\
