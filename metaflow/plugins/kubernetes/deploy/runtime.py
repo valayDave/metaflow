@@ -70,6 +70,7 @@ class KubeDeployRuntime(object):
                  tags=None,
                  kube_namespace=None,
                  partial_runtime_cli=None,
+                 clone_run_id=None,
                  max_runtime_cpu=None,
                  max_runtime_memory=None,
                  **kwargs):
@@ -103,6 +104,7 @@ class KubeDeployRuntime(object):
         self._max_workers = max_workers
         self._max_num_splits = max_num_splits
         self._max_log_size = max_log_size
+        self._origin_run_id = clone_run_id
         
         # this will be used for syncing the files in the right other to S3. 
         self._internal_syncing_files = []
@@ -186,7 +188,7 @@ class KubeDeployRuntime(object):
         return curr_name
 
 
-    def persist_runtime(self,username):
+    def persist_runtime(self,username,resume_bool=False):
         """persist_runtime 
         - create a deployment ID 
         - sync dependencies into datastore under the deployment_id
@@ -199,7 +201,7 @@ class KubeDeployRuntime(object):
         self._ds = self._datastore(self._flow.name,mode='w')
         # $ Create a way to persist the runtime by changing the file based Params to defaults
         self._logger('Persisting Parameters')
-        self._persist_params()
+        self._persist_params(resume_bool=resume_bool)
         self._logger('Saving Code Packages')
         # $ save packages to extract later. 
         self._save_package_once(self._ds,self._package)
@@ -209,7 +211,7 @@ class KubeDeployRuntime(object):
         self._logger('Persisting File Artifacts')
         self.include_artifact_url = self._save_artifacts(self._ds)
 
-    def _persist_params(self):
+    def _persist_params(self,resume_bool=False):
         """_persist_params [summary]
         # This will set the Runtime_cli params Which we not fully set when given the KubeDeployRuntime. 
         # For params which have files which are lying in weird paths such as ../filename or ../../../filename :
@@ -220,15 +222,16 @@ class KubeDeployRuntime(object):
         runtime_cli_args = None
         arguement_lists = []
         # $ Setting Path defaults here so that files from what ever locations can be added to tar package with defaults being used. 
-        for file_parsed_param_name in input_file_dict:
-            holding_val = self._send_kwargs[file_parsed_param_name]
-            arguement_lists.append(['--'+input_file_dict[file_parsed_param_name]['actual_name'],input_file_dict[file_parsed_param_name]['default_path']])
-            self._send_kwargs[file_parsed_param_name] = input_file_dict[file_parsed_param_name]['default_path']
-        
-        for parsed_param_name in input_param_dict:
-            holding_val = self._send_kwargs[parsed_param_name]
-            if holding_val: # Doing this because defaults are many parameters are set with None as defaults. If user didn't explicitly set None Parameter the ignore it.
-                arguement_lists.append(['--'+input_param_dict[parsed_param_name]['actual_name'],holding_val])
+        if not resume_bool:
+            for file_parsed_param_name in input_file_dict:
+                holding_val = self._send_kwargs[file_parsed_param_name]
+                arguement_lists.append(['--'+input_file_dict[file_parsed_param_name]['actual_name'],input_file_dict[file_parsed_param_name]['default_path']])
+                self._send_kwargs[file_parsed_param_name] = input_file_dict[file_parsed_param_name]['default_path']
+            
+            for parsed_param_name in input_param_dict:
+                holding_val = self._send_kwargs[parsed_param_name]
+                if holding_val: # Doing this because defaults are many parameters are set with None as defaults. If user didn't explicitly set None Parameter the ignore it.
+                    arguement_lists.append(['--'+input_param_dict[parsed_param_name]['actual_name'],holding_val])
 
         runtime_cli_args = ' '.join([' '.join([str(a) for a in arg1]) for arg1 in arguement_lists])
         # $ Setting final CLI Here. 
@@ -243,6 +246,9 @@ class KubeDeployRuntime(object):
 
         if self._max_workers is not None:
             runtime_cli_args+=' --max-log-size {}'.format(self._max_log_size)
+        
+        if self._origin_run_id is not None:
+            runtime_cli_args+=' --origin-run-id {}'.format(self._origin_run_id)
 
         self._final_cli = '{partial_cli} {cli_args}'.format(partial_cli=self._final_cli,cli_args=runtime_cli_args)
 

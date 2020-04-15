@@ -120,7 +120,7 @@ def list(ctx, run_id, user, my_runs):
 def kill(ctx, run_id, user, my_runs):
     batch = Kube(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
     _execute_cmd(
-        kube_1.kill_jobs, ctx.obj.flow.name, run_id, user, my_runs, ctx.obj.echo
+        batch.kill_jobs, ctx.obj.flow.name, run_id, user, my_runs, ctx.obj.echo
     )
 
 
