@@ -200,7 +200,6 @@ def get_kubernetes_client():
         raise MetaflowException("Error Loading Kubernetes Configuration. %s" % str(e))
     
 
-cached_aws_sandbox_creds = None
 def get_authenticated_boto3_client(module, params={}):
     from metaflow.exception import MetaflowException
     import requests
