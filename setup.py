@@ -1,6 +1,6 @@
 from setuptools import setup, find_packages
 
-version = '2.0.3'
+version = '2.0.5'
 
 setup(name='metaflow',
       version=version,
@@ -19,7 +19,8 @@ setup(name='metaflow',
         'click>=7.0',
         'requests',
         'boto3',
-        'kubernetes==10.0.1'
+        'kubernetes==10.0.1',
+        'pylint<2.5.0'
       ],
       tests_require = [
         'coverage'
