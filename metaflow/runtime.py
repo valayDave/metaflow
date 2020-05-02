@@ -178,7 +178,6 @@ class NativeRuntime(object):
         self._is_cloned[task.path] = task.is_cloned
 
     def execute(self):
-
         self._logger('Workflow starting (run-id %s):' % self._run_id,
                      system_msg=True)
 
@@ -758,6 +757,8 @@ class CLIArgs(object):
         return ' '.join(self.get_args())
 
 
+# $ THIS IS THE CLASS WHICH SPAWNS SUB PROCESSES TO Do the WORK. 
+# $ Need to see how this applies for Batch. 
 class Worker(object):
 
     def __init__(self, task, max_logs_size):

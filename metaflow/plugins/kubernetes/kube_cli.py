@@ -8,9 +8,15 @@ import click
 
 from distutils.dir_util import copy_tree
 
-from .batch import Batch, BatchKilledException
+from .kube import Kube, KubeKilledException, KubeException
+from .deploy.runtime import KubeDeployRuntime
+# from .deploy import runtime_util as deploy_runtime_util
+from metaflow import decorators
+from metaflow.graph import FlowGraph
 
 from metaflow.datastore import MetaflowDataStore
+from functools import wraps
+from metaflow import namespace
 from metaflow.datastore.local import LocalDataStore
 from metaflow.datastore.util.s3util import get_s3_client
 from metaflow.metaflow_config import DATASTORE_LOCAL_DIR
@@ -27,13 +33,14 @@ except:  # noqa E722
     # python3
     from urllib.parse import urlparse
 
+
 @click.group()
 def cli():
     pass
 
 
-@cli.group(help="Commands related to Batch.")
-def batch():
+@cli.group(help="Commands related to Kube.")
+def kube():
     pass
 
 
@@ -55,7 +62,8 @@ def _execute_cmd(func, flow_name, run_id, user, my_runs, echo):
     if not run_id and latest_run:
         run_id = util.get_latest_run_id(echo, flow_name)
         if run_id is None:
-            raise CommandException("A previous run id was not found. Specify --run-id.")
+            raise CommandException(
+                "A previous run id was not found. Specify --run-id.")
 
     func(flow_name, run_id, user, echo)
 
@@ -87,7 +95,8 @@ def _sync_metadata(echo, metadata, datastore_root, attempt):
         except err as e:  # noqa F841
             pass
 
-@batch.command(help="List running Batch tasks of this flow")
+
+@kube.command(help="List running Kube tasks of this flow")
 @click.option(
     "--my-runs", default=False, is_flag=True, help="Run the command over all tasks."
 )
@@ -95,13 +104,13 @@ def _sync_metadata(echo, metadata, datastore_root, attempt):
 @click.option("--run-id", default=None, help="List tasks corresponding to the run id.")
 @click.pass_context
 def list(ctx, run_id, user, my_runs):
-    batch = Batch(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
+    batch = Kube(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
     _execute_cmd(
         batch.list_jobs, ctx.obj.flow.name, run_id, user, my_runs, ctx.obj.echo
     )
 
 
-@batch.command(help="Terminate running Batch tasks of this flow.")
+@kube.command(help="Terminate running Kube tasks of this flow.")
 @click.option("--my-runs", default=False, is_flag=True, help="Kill all running tasks.")
 @click.option("--user", default=None, help="List tasks for the given user.")
 @click.option(
@@ -109,33 +118,29 @@ def list(ctx, run_id, user, my_runs):
 )
 @click.pass_context
 def kill(ctx, run_id, user, my_runs):
-    batch = Batch(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
+    batch = Kube(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
     _execute_cmd(
         batch.kill_jobs, ctx.obj.flow.name, run_id, user, my_runs, ctx.obj.echo
     )
 
 
-@batch.command(
-    help="Execute a single task using Batch. This command "
-    "calls the top-level step command inside a Batch "
-    "job with the given options. Typically you do not "
+@kube.command(
+    help="Execute a single task using Kube. This command "
+    "calls the top-level step command inside a Kube Job Container"
+    "with the given options. Typically you do not "
     "call this command directly; it is used internally "
     "by Metaflow."
 )
 @click.argument("step-name")
 @click.argument("code-package-sha")
 @click.argument("code-package-url")
-@click.option("--executable", help="Executable requirement for Batch.")
+@click.option("--executable", help="Executable requirement for Kube.")
 @click.option(
-    "--image", help="Docker image requirement for Batch. In name:version format."
+    "--image", help="Docker image requirement for Kube. In name:version format."
 )
-@click.option(
-    "--iam_role", help="IAM role requirement for Batch"
-)
-@click.option("--cpu", help="CPU requirement for Batch.")
-@click.option("--gpu", help="GPU requirement for Batch.")
-@click.option("--memory", help="Memory requirement for Batch.")
-@click.option("--queue", help="Job execution queue for Batch.")
+@click.option("--cpu", help="CPU requirement for Kube.")
+@click.option("--gpu", help="GPU requirement for Kube.")
+@click.option("--memory", help="Memory requirement for Kube.")
 @click.option("--run-id", help="Passed to the top-level 'step'.")
 @click.option("--task-id", help="Passed to the top-level 'step'.")
 @click.option("--input-paths", help="Passed to the top-level 'step'.")
@@ -146,6 +151,7 @@ def kill(ctx, run_id, user, my_runs):
     "--tag", multiple=True, default=None, help="Passed to the top-level 'step'."
 )
 @click.option("--namespace", default=None, help="Passed to the top-level 'step'.")
+@click.option("--kube_namespace", default=None, help="Name Space to use on Kubernetes. This is not a metaflow namespace")
 @click.option("--retry-count", default=0, help="Passed to the top-level 'step'.")
 @click.option(
     "--max-user-code-retries", default=0, help="Passed to the top-level 'step'."
@@ -163,19 +169,19 @@ def step(
     code_package_url,
     executable=None,
     image=None,
-    iam_role=None,
     cpu=None,
     gpu=None,
     memory=None,
-    queue=None,
     run_time_limit=None,
+    kube_namespace=None,
     **kwargs
 ):
     def echo(batch_id, msg, stream=sys.stdout):
         ctx.obj.echo_always("[%s] %s" % (batch_id, msg))
 
     if ctx.obj.datastore.datastore_root is None:
-        ctx.obj.datastore.datastore_root = ctx.obj.datastore.get_datastore_root_from_config(echo)
+        ctx.obj.datastore.datastore_root = ctx.obj.datastore.get_datastore_root_from_config(
+            echo)
 
     if executable is None:
         executable = ctx.obj.environment.executable(step_name)
@@ -188,7 +194,7 @@ def step(
     if input_paths:
         max_size = 30 * 1024
         split_vars = {
-            "METAFLOW_INPUT_PATHS_%d" % (i // max_size): input_paths[i : i + max_size]
+            "METAFLOW_INPUT_PATHS_%d" % (i // max_size): input_paths[i: i + max_size]
             for i in range(0, len(input_paths), max_size)
         }
         kwargs["input_paths"] = "".join("${%s}" % s for s in split_vars.keys())
@@ -197,6 +203,8 @@ def step(
     step_cli = u"{entrypoint} {top_args} step {step} {step_args}".format(
         entrypoint=entrypoint, top_args=top_args, step=step_name, step_args=step_args
     )
+    # Example value of what the result of the step_cli parameter when running remotely on Batch.
+    # STEP CLI :  metaflow_HelloAWSFlow_linux-64_42c548a8c1def9ca0d877bf671025b5e69b97f83/bin/python -s -u hello.py --quiet --metadata local --environment conda --datastore s3 --event-logger nullSidecarLogger --monitor nullSidecarMonitor --datastore-root s3://kubernetes-first-test-store/metaflow_store --with batch:cpu=1,gpu=0,memory=1000,image=python:3.7,queue=arn:aws:batch:us-east-1:314726501535:job-queue/Metaflow-Job-Q,iam_role=arn:aws:iam::314726501535:role/Metaflow_Batch_ECS_Role_TEST --package-suffixes .py --pylint step start --run-id 1581986312466293 --task-id 1 --input-paths ${METAFLOW_INPUT_PATHS_0}
     node = ctx.obj.graph[step_name]
 
     # Get retry information
@@ -208,7 +216,7 @@ def step(
             retry_deco[0].attributes.get("minutes_between_retries", 1)
         )
 
-    # Set batch attributes
+    # Set kube attributes
     attrs = {
         "metaflow.user": util.get_username(),
         "metaflow.flow_name": ctx.obj.flow.name,
@@ -238,32 +246,31 @@ def step(
             "Sleeping %d minutes before the next Batch retry" % minutes_between_retries
         )
         time.sleep(minutes_between_retries * 60)
-    batch = Batch(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
+    kube = Kube(ctx.obj.metadata, ctx.obj.environment,ctx.obj.datastore)
     try:
-        with ctx.obj.monitor.measure("metaflow.batch.launch"):
-            batch.launch_job(
+        with ctx.obj.monitor.measure("metaflow.kube.launch"):
+            kube.launch_job(
                 step_name,
                 step_cli,
                 code_package_sha,
                 code_package_url,
                 ctx.obj.datastore.TYPE,
                 image=image,
-                queue=queue,
-                iam_role=iam_role,
                 cpu=cpu,
                 gpu=gpu,
                 memory=memory,
+                kube_namespace=kube_namespace,
                 run_time_limit=run_time_limit,
                 env=env,
-                attrs=attrs
+                attrs=attrs,
             )
     except Exception as e:
         print(e)
         _sync_metadata(echo, ctx.obj.metadata, datastore_root, retry_count)
         sys.exit(METAFLOW_EXIT_DISALLOW_RETRY)
     try:
-        batch.wait(echo=echo)
-    except BatchKilledException:
+        kube.wait(echo=echo)
+    except KubeKilledException:
         # don't retry killed tasks
         traceback.print_exc()
         _sync_metadata(echo, ctx.obj.metadata, datastore_root, retry_count)

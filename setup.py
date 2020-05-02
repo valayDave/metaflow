@@ -19,6 +19,7 @@ setup(name='metaflow',
         'click>=7.0',
         'requests',
         'boto3',
+        'kubernetes==10.0.1',
         'pylint<2.5.0'
       ],
       tests_require = [

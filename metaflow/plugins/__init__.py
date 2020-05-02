@@ -8,9 +8,13 @@ def get_plugin_cli():
     # Add new CLI commands in this list
     from . import package_cli
     from .aws.batch import batch_cli
+    from .kubernetes import kube_cli
+    from .kubernetes.deploy import kube_deploy_cli
 
     return [package_cli.cli,
-            batch_cli.cli]
+            batch_cli.cli,
+            kube_cli.cli,
+            kube_deploy_cli.cli]
 
 # Add new decorators in this list
 from .catch_decorator import CatchDecorator
@@ -18,6 +22,7 @@ from .timeout_decorator import TimeoutDecorator
 from .environment_decorator import EnvironmentDecorator
 from .retry_decorator import RetryDecorator
 from .aws.batch.batch_decorator import BatchDecorator, ResourcesDecorator
+from .kubernetes.kube_decorator import KubeDecorator
 from .conda.conda_step_decorator import CondaStepDecorator
 
 STEP_DECORATORS = [CatchDecorator,
@@ -25,6 +30,7 @@ STEP_DECORATORS = [CatchDecorator,
                    EnvironmentDecorator,
                    ResourcesDecorator,
                    RetryDecorator,
+                   KubeDecorator,
                    BatchDecorator,
                    CondaStepDecorator]
 
@@ -38,7 +44,8 @@ ENVIRONMENTS = [CondaEnvironment]
 # careful with the choice of name though - they become top-level
 # imports from the metaflow package.
 from .conda.conda_flow_decorator import CondaFlowDecorator
-FLOW_DECORATORS = [CondaFlowDecorator]
+from .environment_decorator import GlobalEnvironmentDecorator
+FLOW_DECORATORS = [CondaFlowDecorator,GlobalEnvironmentDecorator]
 
 # Sidecars
 SIDECAR = {}

@@ -10,3 +10,7 @@ dist/
 .tox/
 
 .ipynb_checkpoints/
+.VSCodeCounter/
+.env/
+.vscode
+scratch_pad/
