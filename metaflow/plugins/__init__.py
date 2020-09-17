@@ -22,6 +22,7 @@ from .retry_decorator import RetryDecorator
 from .aws.batch.batch_decorator import BatchDecorator, ResourcesDecorator
 from .aws.step_functions.step_functions_decorator import StepFunctionsInternalDecorator
 from .conda.conda_step_decorator import CondaStepDecorator
+from .wandb_decorator import WeightsNBiasDecorator
 
 STEP_DECORATORS = [CatchDecorator,
                    TimeoutDecorator,
@@ -30,6 +31,7 @@ STEP_DECORATORS = [CatchDecorator,
                    RetryDecorator,
                    BatchDecorator,
                    StepFunctionsInternalDecorator,
+                   WeightsNBiasDecorator,
                    CondaStepDecorator]
 
 # Add Conda environment

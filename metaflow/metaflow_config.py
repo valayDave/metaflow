@@ -126,6 +126,13 @@ CONDA_PACKAGE_S3ROOT = from_conf(
         '%s/conda' % from_conf('METAFLOW_DATASTORE_SYSROOT_S3'))
 
 ###
+# Weights aand Bias Configurations
+###
+WANDB_KEY = from_conf(
+    'WANDB_API_KEY',default=None
+)
+
+###
 # Debug configuration
 ###
 DEBUG_OPTIONS = ['subcommand', 'sidecar', 's3client']
