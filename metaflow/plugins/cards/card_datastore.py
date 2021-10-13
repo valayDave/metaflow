@@ -206,7 +206,7 @@ class CardDatastore(object):
 
         return cards_found
     
-    def get_card_names(self,card_paths):
+    def card_name_from_path(self,card_paths):
         name_tuples = []
         for path in card_paths:
             name_tuples.append(self._card_info_from_path(path))
@@ -223,7 +223,7 @@ class CardDatastore(object):
                     return main_path
     
     
-    def extract_card_paths(self,card_type=None,card_id=None,card_index=None,card_hash=None):
+    def get_card_paths(self,card_type=None,card_id=None,card_index=None,card_hash=None):
         return self._list_card_paths(card_type=card_type,\
                                     card_id=card_id,\
                                     card_index=card_index,\

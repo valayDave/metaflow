@@ -8,6 +8,7 @@ from metaflow.datastore import DATASTORES, FlowDataStore
 from metaflow.datastore.content_addressed_store import BlobCache
 from metaflow.exception import MetaflowException
 from metaflow.metaflow_config import CLIENT_CACHE_PATH, CLIENT_CACHE_MAX_SIZE
+from metaflow.plugins.cards.card_datastore import CardDatastore
 
 NEW_FILE_QUARANTINE = 10
 
@@ -242,6 +243,21 @@ class FileCache(object):
             self._store_caches[cache_id] = cached_flow_datastore
             return cached_flow_datastore
 
+    def get_all_cards(self, ds_type,ds_root, flow_name, run_id,
+            step_name, task_id, card_type=None, card_id=None, card_index=None, card_hash=None):
+        ds = self._get_flow_datastore(ds_type, ds_root, flow_name)
+        card_ds = CardDatastore(ds,\
+                    run_id,\
+                    step_name,\
+                    task_id)
+        paths = card_ds.get_card_paths(
+            card_type=card_type, card_id=card_id, card_index=card_index, card_hash=card_hash
+        )
+        local_paths = []
+        for path,nametup in zip(paths,card_ds.card_name_from_path(paths)):    
+            local_path = card_ds.cache_locally(path)
+            local_paths.append(local_path)
+            
 class FileBlobCache(BlobCache):
 
     def __init__(self, filecache, cache_id):

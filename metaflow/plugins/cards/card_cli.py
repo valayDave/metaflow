@@ -89,7 +89,7 @@ def resolve_card(ctx,identifier,id=None,hash=None,type=None,index=0):
                                 step_name,\
                                 task_id,\
                                 path_spec=pathspec)
-    card_paths_found = card_datastore.extract_card_paths(card_type=type,card_id=card_id,card_index=index,card_hash=hash)
+    card_paths_found = card_datastore.get_card_paths(card_type=type,card_id=card_id,card_index=index,card_hash=hash)
     if len(card_paths_found) == 0 :
             # If there are no files found on the Path then raise an error of 
             raise CardNotPresentException(flow_name,\
@@ -128,7 +128,7 @@ def raise_timeout(signum, frame):
 def list_availble_cards(ctx,path_spec,card_paths,card_datastore,command='view'):
     # todo : create nice response messages on the CLI for cards which were found.
     scriptname = ctx.obj.flow.script_name
-    path_tuples = card_datastore.get_card_names(card_paths)
+    path_tuples = card_datastore.card_name_from_path(card_paths)
     ctx.obj.echo(
         "\nFound %s card matching for your query..."%str(len(path_tuples)),fg='green'
     )
