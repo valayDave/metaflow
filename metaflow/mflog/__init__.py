@@ -49,7 +49,7 @@ def capture_output_to_mflog(command_and_args, var_transform=None):
     if var_transform is None:
         var_transform = lambda s: "$%s" % s
 
-    return "python -m metaflow.mflog.redirect_streams %s %s %s %s" % (
+    return "python -m metaflow.mflog.redirect_streams %s %s %s && %s" % (
         TASK_LOG_SOURCE,
         var_transform("MFLOG_STDOUT"),
         var_transform("MFLOG_STDERR"),
