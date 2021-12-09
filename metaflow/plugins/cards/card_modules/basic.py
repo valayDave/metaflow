@@ -433,6 +433,9 @@ class ErrorCard(MetaflowCard):
         self._components = components
 
     def render(self, task, stack_trace=None):
+        RENDER_TEMPLATE = read_file(RENDER_TEMPLATE_PATH)
+        JS_DATA = read_file(JS_PATH)
+        CSS_DATA = read_file(CSS_PATH)
         trace = "None"
         if stack_trace is not None:
             trace = stack_trace
@@ -453,7 +456,11 @@ class ErrorCard(MetaflowCard):
             components=[page],
         )
         pt = self._get_mustache()
-        data_dict = dict(task_data=json.dumps(json.dumps(final_component_dict)))
+        data_dict = dict(
+            task_data=json.dumps(json.dumps(final_component_dict)),
+            javascript=JS_DATA,
+            css=CSS_DATA,
+        )
         return pt.render(RENDER_TEMPLATE, data_dict)
 
 
