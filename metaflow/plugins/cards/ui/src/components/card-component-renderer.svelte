@@ -1,41 +1,30 @@
+<!-- Renders any type of component, including Page and Section -->
 <script lang="ts">
+import { SvelteComponent } from "svelte";
+
   import type * as types from "../types";
-  import Artifacts from "./artifacts.svelte";
-  import BarChart from "./bar-chart.svelte";
-  import Dag from "./dag/dag.svelte";
-  import Heading from "./heading.svelte";
-  import Image from "./image.svelte";
-  import LineChart from "./line-chart.svelte";
-  import Log from "./log.svelte";
+  import { getComponent } from "./componentTypes";
   import Page from "./page.svelte";
   import Section from "./section.svelte";
-  import Subtitle from "./subtitle.svelte";
-  import Table from "./table.svelte";
-  import Text from "./text.svelte";
+
   import Title from "./title.svelte";
 
   export let componentData: types.CardComponent;
 
-  const typesMap: Record<typeof componentData.type, any> = {
-    artifacts: Artifacts,
-    barChart: BarChart,
-    dag: Dag,
-    heading: Heading,
-    image: Image,
-    lineChart: LineChart,
-    log: Log,
-    page: Page,
-    section: Section,
-    subtitle: Subtitle,
-    table: Table,
-    text: Text,
-    title: Title,
-  };
+  // Get a lower-level component or a Page or Section
+  let component: typeof SvelteComponent;
+  switch(componentData?.type) {
+    case "page":
+      component = Page
+      break;
+    case "section":
+      component = Section
+      break;
+    default:
+    component = getComponent(componentData?.type);
+  }
 </script>
 
-{#if componentData?.type}
-  <svelte:component
-    this={typesMap?.[componentData.type] || Title}
-    {componentData}
-  />
+{#if component}
+  <svelte:component this={component || Title} {componentData} />
 {/if}

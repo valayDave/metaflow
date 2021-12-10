@@ -154,6 +154,7 @@ export interface LogComponent {
   data: string;
 }
 
+
 // wrap all component options into a Component type
 export type CardComponent =
   | ArtifactsComponent

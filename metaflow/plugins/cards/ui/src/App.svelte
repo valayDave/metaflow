@@ -10,6 +10,10 @@
   import Main from "./components/main.svelte";
   import Modal from "./components/modal.svelte";
   import Nav from "./components/aside-nav.svelte";
+  import type * as types from "../types";
+
+  let components: types.ComponentData[];
+  $: components = ($cardData?.components || []) as types.ComponentData[];
 </script>
 
 <div class="container">
@@ -18,7 +22,7 @@
   </Aside>
 
   <Main>
-    {#each $cardData?.components || [] as componentData}
+    {#each components as componentData}
       <ComponentRenderer {componentData} />
     {/each}
   </Main>

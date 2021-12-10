@@ -1,7 +1,7 @@
 <!-- this creates a section wrapper to hold multiple components inside it -->
 <script lang="ts">
   import type * as types from "../types";
-  import CardComponentRenderer from "./card-component-renderer.svelte";
+  import LowLevelCardComponentRenderer from "./low-level-card-component-renderer.svelte";
 
   export let componentData: types.SectionComponent;
 
@@ -26,7 +26,7 @@
   <div class="sectionItems" {style}>
     {#if contents}
       {#each contents || [] as componentData}
-        <CardComponentRenderer {componentData} />
+        <LowLevelCardComponentRenderer {componentData} />
       {/each}
     {:else}
       <slot />

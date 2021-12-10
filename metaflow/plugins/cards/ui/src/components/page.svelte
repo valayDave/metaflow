@@ -1,7 +1,8 @@
 <!-- This component will wrap a page.  Later we can decide if we want to render only a single page -->
 <script lang="ts">
   import type * as types from "../types";
-  import CardComponentRenderer from "./card-component-renderer.svelte";
+  import LowLevelCardComponentRenderer from "./low-level-card-component-renderer.svelte";
+  import Section from "./section.svelte";
 
   export let componentData: types.PageComponent;
   const { title, contents } = componentData;
@@ -9,7 +10,11 @@
 
 <div id={`page-${title || "No Title"}`} class="page">
   {#each contents || [] as component}
-    <CardComponentRenderer componentData={component} />
+    {#if component.type === "section"}
+      <Section componentData={component} />
+    {:else}
+      <LowLevelCardComponentRenderer componentData={component} />
+    {/if}
   {/each}
 </div>
 
