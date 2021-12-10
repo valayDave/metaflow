@@ -11,16 +11,14 @@ describe("Provides a sanity check on the demo page", () => {
     cy.visit("/");
   });
 
-  /**
-   * Test the title component is rendered with the path_spec
-   */
+  /* ---------------------------------- title --------------------------------- */
+
   it("places the path", () => {
     cy.get("h2").contains("DefaultCardFlow/1635187021511332/join_static/1");
   });
 
-  /**
-   * testing that the nav is populated with nested lists from the tree
-   */
+  /* ----------------------------- navigation tree ---------------------------- */
+
   it("loads the navigation tree", () => {
     cy.get(".navList")
       .children()
@@ -38,10 +36,25 @@ describe("Provides a sanity check on the demo page", () => {
       });
   });
 
-  /**
-   * test the vertical table component
-   */
-  // it('loads the vertical table', () => {
-  //   cy.get('')
-  // })
+  /* ----------------------------- vertical table ----------------------------- */
+
+  it("loads the vertical-table component", () => {
+    cy.get('[data-component="table-vertical"]')
+      .find("tr")
+      .should("have.length", 6);
+  });
+
+  /* -------------------------------- artifacts ------------------------------- */
+
+  it("loads the artifacts component", () => {
+    cy.get('[data-component="artifacts"]')
+      .find("table tr")
+      .should("have.length", 23);
+  });
+
+  /* --------------------------------- images --------------------------------- */
+
+  it("loads the images component", () => {
+    cy.find('[data-component="image"]');
+  });
 });
