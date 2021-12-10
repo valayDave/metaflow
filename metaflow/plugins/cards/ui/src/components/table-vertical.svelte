@@ -8,7 +8,7 @@
 </script>
 
 {#if columns && data}
-  <div class="tableContainer">
+  <div class="tableContainer" data-component="table-vertical">
     <table>
       <tbody>
         <!-- here we're pivoting the table treating columns as rows -->

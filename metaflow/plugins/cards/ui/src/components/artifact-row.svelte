@@ -18,7 +18,7 @@
   $: el ? highlightCode() : null;
 </script>
 
-<tr>
+<tr data-component="artifact-row">
   <td class="idCell"> {id} </td>
   <td class="codeCell"
     ><code class="mono" bind:this={el}>{artifact.data}</code></td

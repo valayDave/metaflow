@@ -8,7 +8,7 @@
 </script>
 
 {#if columns && data}
-  <div class="tableContainer">
+  <div class="tableContainer" data-component="table-horizontal">
     <table>
       <thead>
         <tr>
