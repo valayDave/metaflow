@@ -3,7 +3,7 @@
   import type { DagStep } from "../../types";
   import { getContext, onMount } from "svelte";
   import { isOverflown } from "../../utils";
-  import { currentStepContext } from "./dag.svelte";
+  import { currentStepContext } from "./constants.svelte";
 
   export let name: string;
   export let step: DagStep;
@@ -146,7 +146,7 @@
 
   .rectangle {
     background-color: var(--dag-bg-static);
-    border: 3px solid var(--dag-border);
+    border: 1px solid var(--dag-border);
     box-sizing: border-box;
     position: relative;
     height: var(--dag-step-height);
