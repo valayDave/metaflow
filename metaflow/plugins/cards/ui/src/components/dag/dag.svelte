@@ -6,7 +6,7 @@
   import { setContext } from "svelte";
   import type { Boxes, DagComponent } from "../../types";
   import { cardData } from "../../store";
-  import { getStepNameFromPathSpec } from "../../utils";
+  import { getFromPathSpec } from "../../utils";
   import { currentStepContext } from "./constants.svelte";
 
   export let componentData: DagComponent;
@@ -17,7 +17,7 @@
 
   setContext(
     currentStepContext,
-    getStepNameFromPathSpec($cardData?.metadata?.pathspec)
+    getFromPathSpec($cardData?.metadata?.pathspec, "stepname")
   );
 
   let resizeTimeout: ReturnType<typeof setTimeout>;

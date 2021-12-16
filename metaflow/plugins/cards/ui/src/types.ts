@@ -22,6 +22,14 @@ export type Artifacts = Record<string, Artifact>;
 export type TableColumns = string[];
 export type TableData = any[][];
 
+// flowname/runid/stepname/taskid
+export type PathSpecObject = {
+  flowname: string;
+  runid: string;
+  stepname?: string;
+  taskid?: string;
+};
+
 /* ----------------------------------- DAG ---------------------------------- */
 
 export type Dag = Record<string, DagStep>;
