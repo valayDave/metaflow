@@ -4,10 +4,14 @@ import type * as types from "../../src/types";
 
 describe("utils unit tests", () => {
   it("should getPageHierarchy", () => {
-    expect(utils.getPageHierarchy(components as types.CardComponent[])).to.eql({
+    const expected = {
       Run: ["Vertical Table", "Artifacts", "Images", "Horizontal Table"],
       Task: ["DAG", "Log Component", "Line Chart", "Bar Chart"],
-    });
+    };
+
+    expect(utils.getPageHierarchy(components as types.CardComponent[])).to.eql(
+      expected
+    );
   });
 
   it("should convertPixelsToRem", () => {

@@ -6,15 +6,17 @@
  * For now, we're loading the dev page with the example card output, and
  * checking each component renders how we'd expect.
  */
+import { metadata } from "../../public/card-example.json";
+
 describe("Provides a sanity check on the demo page", () => {
   before(() => {
     cy.visit("/");
   });
 
-  /* ---------------------------------- title --------------------------------- */
+  /* ---------------------------------- heading --------------------------------- */
 
-  it("places the path", () => {
-    cy.get("h2").contains("DefaultCardFlow/1635187021511332/join_static/1");
+  it("loads the heading component", () => {
+    cy.get('[data-component="heading"]').contains(metadata.pathspec);
   });
 
   /* ----------------------------- navigation tree ---------------------------- */
@@ -69,6 +71,52 @@ describe("Provides a sanity check on the demo page", () => {
     table.get("table").should("be.visible");
     table.get("thead").should("be.visible");
     table.get("tr").should("have.length.above", 2);
+  });
+
+  /* ----------------------------------- dag ---------------------------------- */
+
+  it("loads the dag component", () => {
+    const dag = cy.get('[data-component="dag"]');
+
+    dag
+      .get(".rectangle")
+      .should("have.length.above", 2)
+      .each((el, i, arr) => {
+        const cyEl = cy.wrap(el);
+
+        // all items should have a .name
+        cyEl.get(".name").should("be.visible");
+
+        // first item should be "start"
+        if (i === 0) {
+          cyEl.contains("start");
+        }
+
+        // last item should be "end"
+        if (i === arr.length - 1) {
+          cyEl.contains("end");
+        }
+      });
+
+    dag.get(".path").should("have.length.above", 2);
+    dag.get(".levelstoshow").should("have.length.above", 2);
+    dag.get(".current").should("have.length", 1);
+  });
+
+  /* ----------------------------------- log ---------------------------------- */
+
+  it("loads the log component", () => {
+    cy.get('[data-component="log"]').find("code").should("have.length", 1);
+  });
+
+  /* ------------------------------- line chart ------------------------------- */
+  it("loads the line chart component", () => {
+    cy.get('[data-component="line-chart"]').get("canvas").should("be.visible");
+  });
+
+  /* -------------------------------- bar chart ------------------------------- */
+  it("loads the bar chart component", () => {
+    cy.get('[data-component="bar-chart"]').get("canvas").should("be.visible");
   });
 });
 

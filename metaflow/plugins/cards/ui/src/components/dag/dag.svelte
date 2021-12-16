@@ -36,7 +36,11 @@
 
 <svelte:window on:resize={handleResize} />
 
-<div bind:this={el} style="position: relative; line-height: 1">
+<div
+  bind:this={el}
+  style="position: relative; line-height: 1"
+  data-component="dag"
+>
   {#if steps?.start}
     <StepWrapper {steps} stepName="start" bind:boxes />
   {:else}
