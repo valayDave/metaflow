@@ -1,8 +1,6 @@
 import * as utils from "../../src/utils";
-import { components } from "../../public/card-example.json";
+import { components, metadata } from "../../public/card-example.json";
 import type * as types from "../../src/types";
-
-const EXAMPLE_FLOW = "JSONParameterFlow/5536/start/128089";
 
 describe("utils unit tests", () => {
   it("should getPageHierarchy", () => {
@@ -18,11 +16,11 @@ describe("utils unit tests", () => {
   });
 
   it("should getPathSpecObject", () => {
-    expect(utils.getPathSpecObject(EXAMPLE_FLOW)).to.eql({
-      flowname: "JSONParameterFlow",
-      runid: "5536",
-      stepname: "start",
-      taskid: "128089",
+    expect(utils.getPathSpecObject(metadata.pathspec)).to.eql({
+      flowname: "DefaultCardFlow",
+      runid: "1635187021511332",
+      stepname: "join_static",
+      taskid: "1",
     });
 
     expect(utils.getPathSpecObject("JSONParameterFlow/5536")).to.eql({
@@ -34,12 +32,18 @@ describe("utils unit tests", () => {
   });
 
   it("should getFromPathSpec", () => {
-    expect(utils.getFromPathSpec(EXAMPLE_FLOW, "flowname")).to.eql(
-      "JSONParameterFlow"
-    );
-    expect(utils.getFromPathSpec(EXAMPLE_FLOW, "runid")).to.equal("5536");
-    expect(utils.getFromPathSpec(EXAMPLE_FLOW, "stepname")).to.equal("start");
-    expect(utils.getFromPathSpec(EXAMPLE_FLOW, "taskid")).to.equal("128089");
+    // DefaultCardFlow/1635187021511332/join_static/1
+    const flowname = utils.getFromPathSpec(metadata.pathspec, "flowname");
+    expect(flowname).to.eql("DefaultCardFlow");
+
+    const runid = utils.getFromPathSpec(metadata.pathspec, "runid");
+    expect(runid).to.equal("1635187021511332");
+
+    const stepname = utils.getFromPathSpec(metadata.pathspec, "stepname");
+    expect(stepname).to.equal("join_static");
+
+    const taskid = utils.getFromPathSpec(metadata.pathspec, "taskid");
+    expect(taskid).to.equal("1");
   });
 
   // SIDE EFFECTS, can't really mock these in unit tests, so lets just make sure they exist
