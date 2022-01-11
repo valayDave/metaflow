@@ -402,10 +402,30 @@ class TaskInfoComponent(MetaflowCardComponent):
         table_comps = []
         for tabname in task_data_dict["tables"]:
             tab_dict = task_data_dict["tables"][tabname]
+            tab_title = "Artifact Name: %s" % tabname
+            sec_tab_comp = [
+                TableComponent(headers=tab_dict["headers"], data=tab_dict["data"])
+            ]
+            post_table_md = None
+
+            if tab_dict["truncated"]:
+                tab_title = "Artifact Name: %s (%d columns and %d rows)" % (
+                    tabname,
+                    tab_dict["full_size"][1],
+                    tab_dict["full_size"][0],
+                )
+                post_table_md = MarkdownComponent(
+                    "_Truncated - %d rows not shown_"
+                    % ((tab_dict["full_size"][0] - len(tab_dict["data"])))
+                )
+
+            if post_table_md:
+                sec_tab_comp.append(post_table_md)
+
             table_comps.append(
                 SectionComponent(
-                    title="Artifact Name: %s" % tabname,
-                    contents=[TableComponent(**tab_dict)],
+                    title=tab_title,
+                    contents=sec_tab_comp,
                 )
             )
 
@@ -571,20 +591,22 @@ class BlankCard(MetaflowCard):
 
     type = "blank"
 
-    def __init__(self, options=dict(title="Task Info"), components=[], graph=None):
+    def __init__(self, options=dict(title=""), components=[], graph=None):
         self._graph = graph
-        self._title = "Task Info"
+        self._title = ""
         if "title" in options:
             self._title = options["title"]
         self._components = components
 
-    def render(self, task):
+    def render(self, task, components=[]):
         RENDER_TEMPLATE = read_file(RENDER_TEMPLATE_PATH)
         JS_DATA = read_file(JS_PATH)
         CSS_DATA = read_file(CSS_PATH)
+        if type(components) != list:
+            components = []
         page_component = PageComponent(
             title=self._title,
-            contents=self._components,
+            contents=components + self._components,
         ).render()
         final_component_dict = dict(
             metadata={

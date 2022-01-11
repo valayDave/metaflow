@@ -21,20 +21,20 @@ class CardComponentCollector:
     This class helps collect `MetaflowCardComponent`s during runtime execution
 
     ### Usage with `current`
-    `current.cards` is of type `CardComponentCollector`
+    `current.card` is of type `CardComponentCollector`
 
     ### Main Usage TLDR
-    - [x] `current.cards.append` customizes the default editable card.
+    - [x] `current.card.append` customizes the default editable card.
     - [x] Only one card can be default editable in a step.
     - [x] The card class must have `ALLOW_USER_COMPONENTS=True` to be considered default editable.
         - [x] Classes with `ALLOW_USER_COMPONENTS=False` are never default editable.
-    - [x] The user can specify an `id` argument to a card, in which case the card is editable through `current.cards[id].append`.
+    - [x] The user can specify an `id` argument to a card, in which case the card is editable through `current.card[id].append`.
         - [x] A card with an id can be also default editable, if there are no other cards that are eligible to be default editable.
     - [x] If multiple default-editable cards exist but only one card doesn’t have an id, the card without an id is considered to be default editable.
-    - [x] If we can’t resolve a single default editable card through the above rules, `current.cards`.append calls show a warning but the call doesn’t fail.
+    - [x] If we can’t resolve a single default editable card through the above rules, `current.card`.append calls show a warning but the call doesn’t fail.
     - [x] A card that is not default editable can be still edited through:
-        - [x] its `current.cards['myid']`
-        - [x] by looking it up by its type, e.g. `current.cards.get(type=’pytorch’)`.
+        - [x] its `current.card['myid']`
+        - [x] by looking it up by its type, e.g. `current.card.get(type=’pytorch’)`.
 
     """
 
@@ -63,7 +63,7 @@ class CardComponentCollector:
     def _add_card(self, card_type, card_id, editable=False, customize=False):
         """
         This function helps collect cards from all the card decorators.
-        As `current.cards` is a singleton this function is called by all @card decorators over a @step to add editable cards.
+        As `current.card` is a singleton this function is called by all @card decorators over a @step to add editable cards.
 
         ## Parameters
 
@@ -112,7 +112,7 @@ class CardComponentCollector:
 
     def _finalize(self):
         """
-        The `_finalize` function is called once the last @card decorator calls `step_init`. Calling this function makes `current.cards` ready for usage inside `@step` code.
+        The `_finalize` function is called once the last @card decorator calls `step_init`. Calling this function makes `current.card` ready for usage inside `@step` code.
         This function's works two parts :
         1. Resolving `self._default_editable_card`.
                 - The `self._default_editable_card` holds the uuid of the card that will have access to the `append`/`extend` methods.
@@ -151,25 +151,8 @@ class CardComponentCollector:
         if len(none_id_cards) == 1:
             self._default_editable_card = none_id_cards[0]["uuid"]
 
-        # If more than one card doesn't have an `id` excluding `customize=True` card then throw warning
-        elif len(none_id_cards) > 1:
-            card_types = ", ".join([k["type"] for k in none_id_cards])
-            warning_message = (
-                "Cards of types : `%s` have `id` set to `None`. "
-                "Please set `id` to each card if you wish to disambiguate using `current.cards['my_card_id']. "
-            ) % card_types
-
-            # Check if there are any cards with `customize=True`
-            if any([k["customize"] for k in none_id_cards]):
-                # if there is only one card left after removing ones with `customize=True` then we don't need to throw a warning as there .
-                if len(none_id_cards) - 1 > 1:
-                    self._warning(warning_message)
-            else:
-                # throw a warning that more than one card that is editable has no id set to it.
-                self._warning(warning_message)
-
         # If the size of the set of ids is not equal to total number of cards with ids then warn the user that we cannot disambiguate
-        # so `current.cards['my_card_id']` wont work.
+        # so `current.card['my_card_id']` wont work.
         id_set = set(card_ids)
         if len(card_ids) != len(id_set):
             non_unique_ids = [
@@ -183,7 +166,7 @@ class CardComponentCollector:
             self._warning(
                 (
                     "Multiple `@card` decorator have been annotated with duplicate ids : %s. "
-                    "`current.cards['%s']` will not work"
+                    "`current.card['%s']` will not work"
                 )
                 % (nui, non_unique_ids[0])
             )
@@ -198,8 +181,8 @@ class CardComponentCollector:
             self._warning(
                 (
                     "Multiple @card decorators have `customize=True`. "
-                    "Only one @card per @step can have `customize=True`."
-                    "All decorators marked `customize=True`"
+                    "Only one @card per @step can have `customize=True`. "
+                    "`current.card.append` will ignore all decorators marked `customize=True`."
                 )
             )
         elif len(customize_cards) == 1:
@@ -213,8 +196,8 @@ class CardComponentCollector:
 
         self._warning(
             (
-                "`current.cards['%s']` is not present. Please set the `id` argument in @card to '%s' to access `current.cards['%s']`. "
-                "`current.cards['%s']` will return an empty `list` which is not referenced to `current.cards` object."
+                "`current.card['%s']` is not present. Please set the `id` argument in @card to '%s' to access `current.card['%s']`. "
+                "`current.card['%s']` will return an empty `list` which is not referenced to `current.card` object."
             )
             % (key, key, key, key)
         )
@@ -225,7 +208,7 @@ class CardComponentCollector:
             card_uuid = self._card_id_map[key]
             if not isinstance(value, list):
                 self._warning(
-                    "`current.cards['%s']` not set. `current.cards['%s']` should be a `list` of `MetaflowCardComponent`."
+                    "`current.card['%s']` not set. `current.card['%s']` should be a `list` of `MetaflowCardComponent`."
                     % (key, key)
                 )
                 return
@@ -233,7 +216,7 @@ class CardComponentCollector:
             return
 
         self._warning(
-            "`current.cards['%s']` is not present. Please set the `id` argument in @card to '%s' to access `current.cards['%s']`. "
+            "`current.card['%s']` is not present. Please set the `id` argument in @card to '%s' to access `current.card['%s']`. "
             % (key, key, key)
         )
 
@@ -254,7 +237,7 @@ class CardComponentCollector:
             else:
                 self._warning(
                     (
-                        "`current.cards.append` cannot disambiguate between multiple editable cards. "
+                        "`current.card.append` cannot disambiguate between multiple editable cards. "
                         "Component will not be appended. "
                         "To fix this set the `id` argument in all @card's when using multiple @card decorators over a single @step. "  # todo : Add Link to documentation
                     )
@@ -279,7 +262,7 @@ class CardComponentCollector:
             else:
                 self._warning(
                     (
-                        "`current.cards.extend` cannot disambiguate between multiple @card decorators. "
+                        "`current.card.extend` cannot disambiguate between multiple @card decorators. "
                         "Component will not be extended. "
                         "To fix this set the `id` argument in all @card when using multiple @card decorators over a single @step. "  # todo : Add Link to documentation
                     )
