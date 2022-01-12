@@ -4,13 +4,16 @@
   import "./global.css";
   import "./prism.css";
   import "./app.css"
-  import { cardData, modal } from "./store";
+  import { cardData, setCardData, modal } from "./store";
   import * as utils from "./utils";
   import Aside from "./components/aside.svelte";
   import ComponentRenderer from "./components/card-component-renderer.svelte";
   import Main from "./components/main.svelte";
   import Modal from "./components/modal.svelte";
   import Nav from "./components/aside-nav.svelte";
+
+  export let rando: string;
+  setCardData(rando)
 
   // Set the `embed` class to hide the `aside` if specified in the URL
   const urlParams = new URLSearchParams(window?.location.search);
