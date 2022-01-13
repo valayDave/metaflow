@@ -5,11 +5,11 @@ import type { Writable } from "svelte/store";
 export const cardData: Writable<types.CardResponse | undefined> =
   writable(undefined);
 
-export const setCardData: (rando: string) => void = (rando) => {
-
+// Fetch the data from the window, or fallback to the example data file
+export const setCardData: (cardDataId: string) => void = (cardDataId) => {
   try {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-    const data = JSON.parse((window as any).__DATA__[rando]) as types.CardResponse;
+    const data = JSON.parse((window as any).__DATA__[cardDataId]) as types.CardResponse;
     cardData.set(data);
   } catch (error) {
     // for now we are loading an example card if there is no string
@@ -22,8 +22,6 @@ export const setCardData: (rando: string) => void = (rando) => {
   }
 
 };
-
-
 
 export const modal: Writable<types.CardComponent | undefined> =
   writable(undefined);

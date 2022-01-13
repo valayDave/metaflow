@@ -12,8 +12,11 @@
   import Modal from "./components/modal.svelte";
   import Nav from "./components/aside-nav.svelte";
 
-  export let rando: string;
-  setCardData(rando)
+  export let cardDataId: string;
+
+  // Get the data from the element in `windows.__DATA__` corresponding to `cardDataId`. This allows multiple sets of
+  // data to exist on a single page
+  setCardData(cardDataId)
 
   // Set the `embed` class to hide the `aside` if specified in the URL
   const urlParams = new URLSearchParams(window?.location.search);

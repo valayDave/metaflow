@@ -63,14 +63,35 @@ class SectionComponent(DefaultComponent):
         self._contents = contents
         self._columns = columns
 
+    @classmethod
+    def render_subcomponents(
+        cls,
+        component_array,
+        additional_allowed_types=[str, dict],
+    ):
+        contents = []
+        for content in component_array:
+            # Render objects of `MetaflowCardComponent` type
+            if issubclass(type(content), MetaflowCardComponent):
+                rendered_content = content.render()
+                if type(rendered_content) == str or type(rendered_content) == dict:
+                    contents.append(rendered_content)
+                else:
+                    contents.append(
+                        SerializationErrorComponent(
+                            content.__class__.__name__,
+                            "Component render didn't return a string or dict",
+                        ).render()
+                    )
+            # Objects of allowed types should be present.
+            elif type(content) in additional_allowed_types:
+                contents.append(content)
+
+        return contents
+
     def render(self):
         datadict = super().render()
-        contents = []
-        for content in self._contents:
-            if issubclass(type(content), MetaflowCardComponent):
-                contents.append(content.render())
-            else:
-                contents.append(content)
+        contents = self.render_subcomponents(self._contents)
         datadict["contents"] = contents
         if self._columns is not None:
             datadict["columns"] = self._columns
@@ -95,45 +116,6 @@ class ImageComponent(DefaultComponent):
         return datadict
 
 
-class ChartComponent(DefaultComponent):
-    def __init__(
-        self,
-        chart_config=None,
-        data=[[]],
-        labels=[],
-    ):
-        super().__init__(title=None, subtitle=None)
-        self._chart_config = chart_config
-        self._data = data
-        self._labels = labels
-        # We either use data & labels OR chart_config
-        # the chart_config object is a
-
-    def render(self):
-        render_dict = super().render()
-        if self._chart_config is not None:
-            render_dict["config"] = self._chart_config
-            return render_dict
-        # No `chart_config` is provided.
-        # Since there is no `chart_config` we pass the `data` and `labels` object.
-        render_dict.update(dict(data=self._data, labels=self._labels))
-        return render_dict
-
-
-class LineChartComponent(ChartComponent):
-    type = "lineChart"
-
-    def __init__(self, chart_config=None, data=[], labels=[]):
-        super().__init__(chart_config=chart_config, data=data, labels=labels)
-
-
-class BarChartComponent(ChartComponent):
-    type = "barChart"
-
-    def __init__(self, chart_config=None, data=[[]], labels=[]):
-        super().__init__(chart_config=chart_config, data=data, labels=labels)
-
-
 class TableComponent(DefaultComponent):
     type = "table"
 
@@ -150,16 +132,28 @@ class TableComponent(DefaultComponent):
         if self._validate_row_type(data):
             self._data = data
 
-    def _validate_header_type(self, data):
+    @classmethod
+    def validate(cls, headers, data):
+        return (cls._validate_header_type(headers), cls._validate_row_type(data))
+
+    @staticmethod
+    def _validate_header_type(data):
         if type(data) != list:
             return False
         return True
 
-    def _validate_row_type(self, data):
+    @staticmethod
+    def _validate_row_type(data):
         if type(data) != list:
             return False
-        if type(data[0]) != list:
+        try:
+            if type(data[0]) != list:
+                return False
+        except IndexError:
             return False
+        except TypeError:
+            return False
+
         return True
 
     def render(self):
@@ -241,6 +235,24 @@ class PageComponent(DefaultComponent):
         return datadict
 
 
+class ErrorComponent(MetaflowCardComponent):
+    def __init__(self, headline, error_message):
+        self._headline = headline
+        self._error_message = error_message
+
+    def render(self):
+        return SectionComponent(
+            title=self._headline,
+            contents=[LogComponent(data=self._error_message)],
+        ).render()
+
+
+class SerializationErrorComponent(ErrorComponent):
+    def __init__(self, component_name, error_message):
+        headline = "Render failed of component named `%s`" % component_name
+        super().__init__(headline, error_message)
+
+
 class ArtifactsComponent(DefaultComponent):
     type = "artifacts"
 
@@ -251,6 +263,19 @@ class ArtifactsComponent(DefaultComponent):
     def render(self):
         datadict = super().render()
         datadict["data"] = self._data
+        return datadict
+
+
+class MarkdownComponent(DefaultComponent):
+    type = "markdown"
+
+    def __init__(self, text=None):
+        super().__init__(title=None, subtitle=None)
+        self._text = text
+
+    def render(self):
+        datadict = super().render()
+        datadict["source"] = self._text
         return datadict
 
 
@@ -339,10 +364,30 @@ class TaskInfoComponent(MetaflowCardComponent):
         table_comps = []
         for tabname in task_data_dict["tables"]:
             tab_dict = task_data_dict["tables"][tabname]
+            tab_title = "Artifact Name: %s" % tabname
+            sec_tab_comp = [
+                TableComponent(headers=tab_dict["headers"], data=tab_dict["data"])
+            ]
+            post_table_md = None
+
+            if tab_dict["truncated"]:
+                tab_title = "Artifact Name: %s (%d columns and %d rows)" % (
+                    tabname,
+                    tab_dict["full_size"][1],
+                    tab_dict["full_size"][0],
+                )
+                post_table_md = MarkdownComponent(
+                    "_Truncated - %d rows not shown_"
+                    % ((tab_dict["full_size"][0] - len(tab_dict["data"])))
+                )
+
+            if post_table_md:
+                sec_tab_comp.append(post_table_md)
+
             table_comps.append(
                 SectionComponent(
-                    title="Artifact Name: %s" % tabname,
-                    contents=[TableComponent(**tab_dict)],
+                    title=tab_title,
+                    contents=sec_tab_comp,
                 )
             )
 
@@ -352,7 +397,7 @@ class TaskInfoComponent(MetaflowCardComponent):
         ]
         if len(param_ids) > 0:
             param_component = ArtifactsComponent(
-                data={pid: task_data_dict["data"][pid] for pid in param_ids}
+                data=[task_data_dict["data"][pid] for pid in param_ids]
             )
         else:
             param_component = TitleComponent(text="No Parameters")
@@ -363,13 +408,13 @@ class TaskInfoComponent(MetaflowCardComponent):
         ).render()
 
         # Don't include parameter ids + "name" in the task artifacts
-        artifact_dict = {
-            k: task_data_dict["data"][k]
+        artifactlist = [
+            task_data_dict["data"][k]
             for k in task_data_dict["data"]
             if k not in param_ids
-        }
-        if len(artifact_dict) > 0:
-            artrifact_component = ArtifactsComponent(data=artifact_dict).render()
+        ]
+        if len(artifactlist) > 0:
+            artrifact_component = ArtifactsComponent(data=artifactlist).render()
         else:
             artrifact_component = TitleComponent(text="No Artifacts")
 
@@ -380,11 +425,17 @@ class TaskInfoComponent(MetaflowCardComponent):
             title="DAG", contents=[DagComponent(data=task_data_dict["graph"]).render()]
         ).render()
 
-        page_contents = [
-            metadata_table,
-            parameter_table,
-            artifact_section,
-        ]
+        page_contents = []
+        if len(self._components) > 0:
+            page_contents.extend(self._components)
+
+        page_contents.extend(
+            [
+                metadata_table,
+                parameter_table,
+                artifact_section,
+            ]
+        )
         if len(table_comps) > 0:
             table_section = SectionComponent(
                 title="Tabular Data", contents=table_comps
@@ -398,9 +449,6 @@ class TaskInfoComponent(MetaflowCardComponent):
                 contents=img_components,
             ).render()
             page_contents.append(img_section)
-
-        if len(self._components) > 0:
-            page_contents.extend(self._components)
 
         page_contents.append(dag_component)
 
@@ -462,12 +510,14 @@ class ErrorCard(MetaflowCard):
             javascript=JS_DATA,
             css=CSS_DATA,
             title=task.pathspec,
-            rando=uuid.uuid4()
+            card_data_id=uuid.uuid4()
         )
         return pt.render(RENDER_TEMPLATE, data_dict)
 
 
 class DefaultCard(MetaflowCard):
+
+    ALLOW_USER_COMPONENTS = True
 
     type = "default"
 
@@ -494,7 +544,47 @@ class DefaultCard(MetaflowCard):
             javascript=JS_DATA,
             title=task.pathspec,
             css=CSS_DATA,
-            rando=uuid.uuid4()
+            card_data_id=uuid.uuid4()
+        )
+        return pt.render(RENDER_TEMPLATE, data_dict)
+
+
+class BlankCard(MetaflowCard):
+
+    ALLOW_USER_COMPONENTS = True
+
+    type = "blank"
+
+    def __init__(self, options=dict(title=""), components=[], graph=None):
+        self._graph = graph
+        self._title = ""
+        if "title" in options:
+            self._title = options["title"]
+        self._components = components
+
+    def render(self, task, components=[]):
+        RENDER_TEMPLATE = read_file(RENDER_TEMPLATE_PATH)
+        JS_DATA = read_file(JS_PATH)
+        CSS_DATA = read_file(CSS_PATH)
+        if type(components) != list:
+            components = []
+        page_component = PageComponent(
+            title=self._title,
+            contents=components + self._components,
+        ).render()
+        final_component_dict = dict(
+            metadata={
+                "pathspec": task.pathspec,
+            },
+            components=[page_component],
+        )
+        pt = self._get_mustache()
+        data_dict = dict(
+            task_data=json.dumps(json.dumps(final_component_dict)),
+            javascript=JS_DATA,
+            title=task.pathspec,
+            css=CSS_DATA,
+            card_data_id=uuid.uuid4()
         )
         return pt.render(RENDER_TEMPLATE, data_dict)
 

@@ -15,15 +15,15 @@
   
 </head>
 
-<body >
+<body>
   <div class="card_app"></div>
   <script>
-    var script_rando = "{{{rando}}}";
+    var mfCardDataId = "{{{card_data_id}}}";
 
     if (!window.__DATA__) {
-      window.__DATA__ = []
+      window.__DATA__ = {};
     }
-    window.__DATA__["{{{rando}}}"] = {{{task_data}}}
+    window.__DATA__["{{{card_data_id}}}"] = {{{task_data}}}
   </script>
   <script>
     {{{javascript}}}
