@@ -59,6 +59,8 @@ class ProfilingCard(BlankCard):
 
     ALLOW_USER_COMPONENTS = False
 
+    measuring_since = None
+
     type = "profiling_card"
 
     CORE_MARKDOWN = """
@@ -86,9 +88,11 @@ _Measured At : %s_
                 ).render()
             ]
         latest_reading = cls._get_readings()
-
-        # Only retun profile if it was called after `min_period`
-        if len(cls.profile) > 0:
+        # This means first measurement
+        if len(cls.profile) == 0:
+            cls.measuring_since = latest_reading.time
+        else:
+            # Only retun profile if it was called after `min_period`
             time_diff = latest_reading.time - cls.profile[-1].time
             if time_diff.seconds < cls.min_period:
                 return []
@@ -97,8 +101,15 @@ _Measured At : %s_
         # Discard old data
         if len(cls.profile) > cls.buffer_size:
             cls.profile = cls.profile[1:]
-
-        return [
+        measuring_since = (
+            ""
+            if cls.measuring_since is None
+            else "_Measuring Since_ : %s" % cls.measuring_since.strftime(TIME_FORMAT)
+        )
+        ms = []
+        if measuring_since != "":
+            ms = [MarkdownComponent(measuring_since).render()]
+        return ms + [
             Section("% CPU usage over time").render(),
             LineChartComponent(
                 data=[p.cpu for p in cls.profile],
