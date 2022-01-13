@@ -169,6 +169,14 @@ class Image(MetaflowCardComponent):
 
         try:
             plt = getattr(plot, "get_figure", None)
+            # Fix this in mf-card-v12
+            try:
+                import matplotlib.pyplot as pyplt
+            except ImportError:
+                return ErrorComponent(
+                    cls.render_fail_headline("Matplotlib cannot be imported"),
+                    "%s" % traceback.format_exc(),
+                )
             if plt is None:
                 return ErrorComponent(
                     cls.render_fail_headline(
@@ -176,12 +184,13 @@ class Image(MetaflowCardComponent):
                     ),
                     "",
                 )
+
             task_to_dict = TaskToDict()
             figure = plot.get_figure()
-            figure.show()
             img_bytes_arr = io.BytesIO()
             figure.savefig(img_bytes_arr, format="PNG")
             parsed_image = task_to_dict.parse_image(img_bytes_arr.getvalue())
+            pyplt.close(figure)
 
             if parsed_image is not None:
                 return cls(src=parsed_image, label=label)

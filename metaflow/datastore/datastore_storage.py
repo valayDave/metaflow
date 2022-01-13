@@ -43,6 +43,9 @@ class DataStoreStorage(object):
     def __init__(self, root=None):
         self.datastore_root = root if root else self.datastore_root
 
+    def file_last_modified(self, path):
+        raise NotImplementedError
+
     @classmethod
     def get_datastore_root_from_config(cls, echo, create_on_absent=True):
         """Returns a default choice for datastore_root from metaflow_config

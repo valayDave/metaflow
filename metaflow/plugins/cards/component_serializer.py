@@ -1,5 +1,7 @@
 from .card_modules import MetaflowCardComponent
 from .card_modules.basic import ErrorComponent, SerializationErrorComponent
+from metaflow.sidecar import SidecarSubProcess
+from metaflow.sidecar_messages import Message, MessageTypes
 import random
 import string
 import json
@@ -54,6 +56,7 @@ class CardComponentCollector:
         self._logger = logger
         # `self._default_editable_card` holds the uuid of the card that is default editable. This card has access to `append`/`extend` methods of `self`
         self._default_editable_card = None
+        self._sidecar_subprocess = None
 
     @staticmethod
     def create_uuid():
@@ -72,6 +75,9 @@ class CardComponentCollector:
         editable=False,
         customize=False,
         suppress_warnings=False,
+        periodic=False,
+        timeout=None,
+        command=[],
     ):
         """
         This function helps collect cards from all the card decorators.
@@ -94,6 +100,9 @@ class CardComponentCollector:
             editable=editable,
             customize=customize,
             suppress_warnings=suppress_warnings,
+            create_command=command,
+            periodic=periodic,
+            timeout=timeout,
         )
         self._warned_once = {"__getitem__": {}, "append": False, "extend": False}
         self._card_meta[card_uuid] = card_metadata
@@ -144,6 +153,12 @@ class CardComponentCollector:
             for c in all_card_meta
             if c["editable"] or (c["customize"] and c["editable"])
         ]
+
+        periodic_cards = [c for c in all_card_meta if c["periodic"]]
+        if len(periodic_cards) > 0:
+            self._sidecar_subprocess = SidecarSubProcess("cards")
+            msg = Message(MessageTypes.LOG_EVENT, periodic_cards)
+            self._sidecar_subprocess.emit_msg(msg)
 
         if len(editable_cards_meta) == 0:
             return

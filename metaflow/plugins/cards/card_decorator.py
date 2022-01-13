@@ -50,6 +50,7 @@ class CardDecorator(StepDecorator):
         self._is_editable = False
         self._card_uuid = None
         self._user_set_card_id = None
+        self._is_periodic = False
 
     def add_to_package(self):
         return list(self._load_card_package())
@@ -64,7 +65,9 @@ class CardDecorator(StepDecorator):
             card_modules_root, filter_extensions=[".html", ".js", ".css"]
         ):
             file_path, arcname = path_tuple
-            yield (file_path, os.path.join("metaflow", "plugins", "cards", arcname))
+            # Fix this in mf-card-v12
+            # This is a bug in mf-card-v12
+            yield (file_path, os.path.join("metaflow", "plugins", "cards", arcname[1:]))
 
         external_card_pth_generator = _get_external_card_package_paths()
         if external_card_pth_generator is None:
@@ -153,6 +156,9 @@ class CardDecorator(StepDecorator):
         if card_class.ALLOW_USER_COMPONENTS:
             self._is_editable = True
 
+        if card_class.periodic:
+            self._is_periodic = True
+
     def task_pre_step(
         self,
         step_name,
@@ -167,6 +173,10 @@ class CardDecorator(StepDecorator):
         ubf_context,
         inputs,
     ):
+
+        self._task_datastore = task_datastore
+        self._metadata = metadata
+
         # We have a step counter to ensure that on calling the final card decorator's `task_pre_step`
         # we call a `finalize` function in the `CardComponentCollector`.
         # This can help ensure the behaviour of the `current.card` object is according to specification.
@@ -197,12 +207,20 @@ class CardDecorator(StepDecorator):
         customize = False
         if str(self.attributes["customize"]) == "True":
             customize = True
+        runspec = "/".join([current.run_id, current.step_name, current.task_id])
+        timeout = None
+        if self.attributes["timeout"] is not None:
+            timeout = int(self.attributes["timeout"])
 
         card_metadata = current.card._add_card(
             self.attributes["type"],
             self._user_set_card_id,
             self._is_editable,
             customize,
+            False,
+            self._is_periodic,
+            timeout,
+            self._make_create_command(runspec),
         )
         self._card_uuid = card_metadata["uuid"]
 
@@ -211,9 +229,6 @@ class CardDecorator(StepDecorator):
         # This will setup the `current.card` object for usage inside `@step` code.
         if self.step_counter == self.total_decos_on_step[step_name]:
             current.card._finalize()
-
-        self._task_datastore = task_datastore
-        self._metadata = metadata
 
     def task_finished(
         self, step_name, flow, graph, is_task_ok, retry_count, max_user_code_retries
@@ -254,26 +269,8 @@ class CardDecorator(StepDecorator):
             top_level_options.update(deco.get_top_level_options())
         return list(self._options(top_level_options))
 
-    def _run_cards_subprocess(self, runspec, component_strings):
-        temp_file = None
-        if len(component_strings) > 0:
-            temp_file = tempfile.NamedTemporaryFile("w", suffix=".json")
-            json.dump(component_strings, temp_file)
-            temp_file.seek(0)
-        executable = sys.executable
-        cmd = [
-            executable,
-            sys.argv[0],
-        ]
-        cmd += self._create_top_level_args() + [
-            "card",
-            "create",
-            runspec,
-            "--type",
-            self.attributes["type"],
-            # Add the options relating to card arguments.
-            # todo : add scope as a CLI arg for the create method.
-        ]
+    def _make_card_args(self):
+        cmd = ["--type", self.attributes["type"]]
         if self.card_options is not None and len(self.card_options) > 0:
             cmd += ["--options", json.dumps(self.card_options)]
         # set the id argument.
@@ -287,6 +284,31 @@ class CardDecorator(StepDecorator):
         # Doing this because decospecs parse information as str, since some non-runtime decorators pass it as bool we parse bool to str
         if str(self.attributes["save_errors"]) == "True":
             cmd += ["--render-error-card"]
+
+        return cmd
+
+    def _make_create_command(self, runspec):
+        executable = sys.executable
+        cmd = [
+            executable,
+            sys.argv[0],
+        ]
+        cmd += self._create_top_level_args() + [
+            "card",
+            "create",
+            runspec,
+        ]
+        cmd += self._make_card_args()
+        return cmd
+
+    def _run_cards_subprocess(self, runspec, component_strings):
+        temp_file = None
+        if len(component_strings) > 0:
+            temp_file = tempfile.NamedTemporaryFile("w", suffix=".json")
+            json.dump(component_strings, temp_file)
+            temp_file.seek(0)
+
+        cmd = self._make_create_command(runspec)
 
         if temp_file is not None:
             cmd += ["--component-file", temp_file.name]

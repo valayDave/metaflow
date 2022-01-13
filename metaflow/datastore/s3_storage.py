@@ -41,6 +41,17 @@ class S3Storage(DataStoreStorage):
                     result.append(s3.info(path, return_missing=True).exists)
                 return result
 
+    def file_last_modified(self, path_to_file):
+        with S3(
+            s3root=self.datastore_root,
+            tmproot=os.getcwd(),
+            external_client=self.s3_client,
+        ) as s3:
+            s3obj = s3.info(path_to_file, return_missing=True)
+            if s3obj.exists:
+                return s3obj.last_modified
+            return None
+
     def info_file(self, path):
         with S3(
             s3root=self.datastore_root,

@@ -1,5 +1,6 @@
 import json
 import os
+import platform
 
 from ..metaflow_config import DATASTORE_LOCAL_DIR, DATASTORE_SYSROOT_LOCAL
 from .datastore_storage import CloseAfterUse, DataStoreStorage
@@ -62,6 +63,25 @@ class LocalStorage(DataStoreStorage):
             full_path = self.full_uri(path)
             results.append(os.path.isfile(full_path))
         return results
+
+    def file_last_modified(self, path_to_file):
+        """
+        Try to get the date that a file was created, falling back to when it was
+        last modified if that isn't possible.
+        See http://stackoverflow.com/a/39501288/1709587 for explanation.
+        """
+        file_exists = self.is_file([path_to_file])[0]
+        filepth = self.full_uri(path_to_file)
+        if not file_exists:
+            return None
+
+        stat = os.stat(filepth)
+        try:
+            return stat.st_birthtime
+        except AttributeError:
+            # We're probably on Linux. No easy way to get creation dates here,
+            # so we'll settle for when its content was last modified.
+            return stat.st_mtime
 
     def info_file(self, path):
         file_exists = self.is_file([path])[0]

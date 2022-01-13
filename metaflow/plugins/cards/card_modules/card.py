@@ -1,12 +1,18 @@
 class MetaflowCard(object):
     type = None
 
+    periodic = False
+
     ALLOW_USER_COMPONENTS = False
 
     scope = "task"  # can be task | run
 
     def __init__(self, options={}, components=[], graph=None):
         pass
+
+    @classmethod
+    def periodic_render(cls):
+        return []
 
     def _get_mustache(self):
         try:

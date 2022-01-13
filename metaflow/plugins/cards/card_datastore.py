@@ -112,6 +112,16 @@ class CardDatastore(object):
             pathspec=self._pathspec,
         )
 
+    def get_latest_card_from_paths(self, card_paths):
+        max_time = None
+        last_path = None
+        for path in card_paths:
+            time = self._backend.file_last_modified(path)
+            if max_time is None or max_time < time:
+                max_time = time
+                last_path = path
+        return last_path
+
     @staticmethod
     def card_info_from_path(path):
         """

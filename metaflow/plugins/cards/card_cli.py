@@ -105,6 +105,7 @@ def resolve_card(
     type=None,
     card_id=None,
     no_echo=False,
+    show_newest=False,
 ):
     """Resolves the card path based on the arguments provided. We allow identifier to be a pathspec or a id of card.
 
@@ -136,7 +137,7 @@ def resolve_card(
         origin_taskpathspec = resumed_info(task)
         if origin_taskpathspec:
             card_pathspec = origin_taskpathspec
-            print_str = ("Resolving card resumed from: %s" % origin_taskpathspec,)
+            print_str = "Resolving card resumed from: %s" % origin_taskpathspec
 
     if not no_echo:
         ctx.obj.echo(print_str, fg="green")
@@ -155,6 +156,11 @@ def resolve_card(
         raise CardNotPresentException(
             card_pathspec, card_hash=hash, card_type=type, card_id=card_id
         )
+
+    if show_newest and len(card_paths_found) > 1:
+        latest_card_path = card_datastore.get_latest_card_from_paths(card_paths_found)
+        if latest_card_path is not None:
+            card_paths_found = [latest_card_path]
 
     return card_paths_found, card_datastore, card_pathspec
 
@@ -543,6 +549,12 @@ def create(
 @card.command()
 @click.argument("pathspec")
 @card_read_options_and_arguments
+@click.option(
+    "--show-newest/--no-show-newest",
+    default=False,
+    show_default=True,
+    help="Show the newest card if many match",
+)
 @click.pass_context
 def view(
     ctx,
@@ -551,6 +563,7 @@ def view(
     type=None,
     id=None,
     follow_resumed=False,
+    show_newest=False,
 ):
     """
     View the HTML card in browser based on the pathspec.\n
@@ -567,6 +580,7 @@ def view(
         hash=hash,
         card_id=card_id,
         follow_resumed=follow_resumed,
+        show_newest=show_newest,
     )
     if len(available_card_paths) == 1:
         open_in_browser(card_datastore.cache_locally(available_card_paths[0]))
@@ -583,6 +597,12 @@ def view(
 @card.command()
 @click.argument("pathspec")
 @card_read_options_and_arguments
+@click.option(
+    "--show-newest/--no-show-newest",
+    default=False,
+    show_default=True,
+    help="Show the newest card if many match",
+)
 @click.pass_context
 def get(
     ctx,
@@ -591,6 +611,7 @@ def get(
     type=None,
     id=None,
     follow_resumed=False,
+    show_newest=False,
 ):
     """
     Get the HTML string of the card based on pathspec.\n
@@ -607,6 +628,7 @@ def get(
         hash=hash,
         card_id=card_id,
         follow_resumed=follow_resumed,
+        show_newest=show_newest,
     )
     if len(available_card_paths) == 1:
         print(card_datastore.get_card_html(available_card_paths[0]))
