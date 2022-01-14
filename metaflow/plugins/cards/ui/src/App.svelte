@@ -14,7 +14,7 @@
 
   export let cardDataId: string;
 
-  // Get the data from the element in `windows.__DATA__` corresponding to `cardDataId`. This allows multiple sets of
+  // Get the data from the element in `windows.__MF_DATA__` corresponding to `cardDataId`. This allows multiple sets of
   // data to exist on a single page
   setCardData(cardDataId)
 

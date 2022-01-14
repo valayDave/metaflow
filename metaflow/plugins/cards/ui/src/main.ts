@@ -8,7 +8,6 @@ try {
   const cardDataId: string = (window as any).mfCardDataId as string;
   const containerId: string = (window as any).mfContainerId as string;
   const containedApp = document.querySelector(`[data-container="${containerId}"]`)?.querySelector(".card_app") as Element
-console.log('cardDataId: ', cardDataId)
   app = new App({
     target: containedApp ?? document.querySelector(".card_app") as Element,
     props: {cardDataId},
