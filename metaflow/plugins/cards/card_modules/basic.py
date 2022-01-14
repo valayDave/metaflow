@@ -510,7 +510,7 @@ class ErrorCard(MetaflowCard):
             javascript=JS_DATA,
             css=CSS_DATA,
             title=task.pathspec,
-            card_data_id=uuid.uuid4()
+            card_data_id=uuid.uuid4(),
         )
         return pt.render(RENDER_TEMPLATE, data_dict)
 
@@ -544,7 +544,7 @@ class DefaultCard(MetaflowCard):
             javascript=JS_DATA,
             title=task.pathspec,
             css=CSS_DATA,
-            card_data_id=uuid.uuid4()
+            card_data_id=uuid.uuid4(),
         )
         return pt.render(RENDER_TEMPLATE, data_dict)
 
@@ -584,7 +584,7 @@ class BlankCard(MetaflowCard):
             javascript=JS_DATA,
             title=task.pathspec,
             css=CSS_DATA,
-            card_data_id=uuid.uuid4()
+            card_data_id=uuid.uuid4(),
         )
         return pt.render(RENDER_TEMPLATE, data_dict)
 
