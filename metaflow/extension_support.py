@@ -214,31 +214,30 @@ def _get_extension_packages():
                                 parts[-1] = parts[-1][:-3]  # Remove the .py
                                 config_module = ".".join(parts)
 
-                            cur_pkg = extension_points_to_pkg[
+                            toplevel_pkgs = extension_points_to_pkg[
                                 _extension_points[idx]
-                            ].get(dist.metadata["Name"], None)
-                            if cur_pkg is not None:
-                                if (
-                                    config_module is not None
-                                    and cur_pkg.config_module is not None
-                                ):
-                                    raise RuntimeError(
-                                        "Package '%s' defines more than one "
-                                        "configuration file for '%s': '%s' and '%s'"
-                                        % (
-                                            dist.metadata["Name"],
-                                            _extension_points[idx],
-                                            config_module,
-                                            cur_pkg.config_module,
+                            ].get(dist.metadata["Name"], {})
+
+                            if len(toplevel_pkgs) > 0:
+                                for _, cur_pkg in toplevel_pkgs.items():
+                                    if (
+                                        config_module is not None
+                                        and cur_pkg.config_module is not None
+                                    ):
+                                        raise RuntimeError(
+                                            "Package '%s' defines more than one "
+                                            "configuration file for '%s': '%s' and '%s'"
+                                            % (
+                                                dist.metadata["Name"],
+                                                _extension_points[idx],
+                                                config_module,
+                                                cur_pkg.config_module,
+                                            )
                                         )
-                                    )
-                                if config_module is not None:
-                                    _ext_debug(
-                                        "\tFound config file '%s'" % config_module
-                                    )
+                                if parts[1] not in toplevel_pkgs:
                                     extension_points_to_pkg[_extension_points[idx]][
                                         dist.metadata["Name"]
-                                    ] = MFExtPackage(
+                                    ][parts[1]] = MFExtPackage(
                                         package_name=dist.metadata["Name"],
                                         tl_package=parts[1],
                                         config_module=config_module,
@@ -250,7 +249,10 @@ def _get_extension_packages():
                                 )
                                 extension_points_to_pkg[_extension_points[idx]][
                                     dist.metadata["Name"]
-                                ] = MFExtPackage(
+                                ] = {}
+                                extension_points_to_pkg[_extension_points[idx]][
+                                    dist.metadata["Name"]
+                                ][parts[1]] = MFExtPackage(
                                     package_name=dist.metadata["Name"],
                                     tl_package=parts[1],
                                     config_module=config_module,
@@ -267,11 +269,14 @@ def _get_extension_packages():
     mf_ext_packages_set = set(mf_ext_packages)
     for pkg_name in mf_ext_packages:
         req_count = 0
-        req_pkgs = [x.split()[0] for x in metadata.requires(pkg_name)]
-        for req_pkg in req_pkgs:
-            if req_pkg in mf_ext_packages_set:
-                req_count += 1
-                req_to_dep.setdefault(req_pkg, []).append(pkg_name)
+        # In case Distribution.requires is None
+        required_package = metadata.requires(pkg_name)
+        if required_package:
+            req_pkgs = [x.split()[0] for x in required_package]
+            for req_pkg in req_pkgs:
+                if req_pkg in mf_ext_packages_set:
+                    req_count += 1
+                    req_to_dep.setdefault(req_pkg, []).append(pkg_name)
         pkg_to_reqs_count[pkg_name] = req_count
 
     # Find roots
@@ -308,7 +313,7 @@ def _get_extension_packages():
 
     # Figure out the per extension point order
     for k, v in extension_points_to_pkg.items():
-        l = [v[pkg] for pkg in mf_pkg_list if pkg in v]
+        l = [t for pkg in mf_pkg_list for t in v[pkg].values() if pkg in v]
         extension_points_to_pkg[k] = l
     return mf_pkg_list, extension_points_to_pkg
 

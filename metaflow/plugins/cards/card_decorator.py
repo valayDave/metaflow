@@ -16,10 +16,10 @@ import re
 from .exception import CARD_ID_PATTERN, TYPE_CHECK_REGEX
 
 
-def warning_message(message, logger=None):
+def warning_message(message, logger=None, ts=False):
     msg = "[@card WARNING] %s" % message
     if logger:
-        logger(msg, timestamp=False, bad=True)
+        logger(msg, timestamp=ts, bad=True)
 
 
 class CardDecorator(StepDecorator):
@@ -50,6 +50,7 @@ class CardDecorator(StepDecorator):
         self._is_editable = False
         self._card_uuid = None
         self._user_set_card_id = None
+        self._card_type = None
 
     def add_to_package(self):
         return list(self._load_card_package())
@@ -144,16 +145,6 @@ class CardDecorator(StepDecorator):
         ]
         self._set_card_counts_per_step(step_name, len(other_card_decorators))
 
-        card_type = self.attributes["type"]
-        card_class = get_card_class(card_type)
-
-        if card_class is None:  # Card type was not ofund
-            # todo : issue a warning about this.
-            return
-
-        if card_class.ALLOW_USER_COMPONENTS:
-            self._is_editable = True
-
     def task_pre_step(
         self,
         step_name,
@@ -168,6 +159,16 @@ class CardDecorator(StepDecorator):
         ubf_context,
         inputs,
     ):
+        card_type = self.attributes["type"]
+        card_class = get_card_class(card_type)
+        if card_class is None:  # Card type was not ofund
+            # todo : issue a warning about this.
+            wrn_msg = "@card of `type` '%s' doesn't exist. " % self.attributes["type"]
+            warning_message(wrn_msg, self._logger, ts=False)
+        else:
+            self._card_type = card_class.type
+            if card_class.ALLOW_USER_COMPONENTS:
+                self._is_editable = True
         # We have a step counter to ensure that on calling the final card decorator's `task_pre_step`
         # we call a `finalize` function in the `CardComponentCollector`.
         # This can help ensure the behaviour of the `current.card` object is according to specification.
