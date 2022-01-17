@@ -28,13 +28,19 @@ def _get_external_card_packages(with_paths=False):
     for m in get_modules("plugins.cards"):
         # Iterate submodules of metaflow_extensions.X.plugins.cards
         # For example metaflow_extensions.X.plugins.cards.monitoring
-        card_packages = [
-            importlib.import_module(card_mod)
-            if not with_paths
-            else (fndx.path, importlib.import_module(card_mod))
-            for fndx, card_mod, ispkg_c in iter_namespace(m.module)
-            if ispkg_c
-        ]
+        card_packages = []
+        for fndx, card_mod, ispkg_c in iter_namespace(m.module):
+            try:
+                if not ispkg_c:
+                    continue
+                cm = importlib.import_module(card_mod)
+                if with_paths:
+                    card_packages.append((fndx.path, cm))
+                else:
+                    card_packages.append(cm)
+            except:
+                # todo : how to tell the user that a module will not be imported
+                pass
         if with_paths:
             card_packages = [
                 (
