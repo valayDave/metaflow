@@ -311,8 +311,6 @@ class CardComponentCollector:
         Components exposed by metaflow ensure that they render safely. If components
         don't render safely then we don't add them to the final list of serialized functions
         """
-        import traceback
-
         serialized_components = []
         if card_uuid not in self._cards:
             return []
