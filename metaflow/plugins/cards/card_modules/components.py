@@ -9,14 +9,36 @@ from .basic import (
 )
 from .card import MetaflowCardComponent
 from .convert_to_native_type import TaskToDict
+from .renderer_tools import render_safely
 
 
-class Artifact(MetaflowCardComponent):
+class UserComponent(MetaflowCardComponent):
+    pass
+
+
+class Artifact(UserComponent):
+    """
+    This class helps visualize any variable on the `MetaflowCard`.
+    The variable will be truncated using `reprlib.Repr.repr()`.
+    Usage :
+    ```python
+    @card
+    @step
+    def my_step(self)
+        from metaflow.cards import Artifact
+        from metaflow import current
+        x = dict(a=2,b=2..)
+        current.card.append(Artifact(x)) # Adds a name to the artifact
+        current.card.append(Artifact(x,'my artifact name'))
+    ```
+    """
+
     def __init__(self, artifact, name=None, compressed=True):
         self._artifact = artifact
         self._name = name
         self._task_to_dict = TaskToDict(only_repr=compressed)
 
+    @render_safely
     def render(self):
         artifact = self._task_to_dict.infer_object(self._artifact)
         artifact["name"] = None
@@ -25,7 +47,7 @@ class Artifact(MetaflowCardComponent):
         return ArtifactsComponent(data=[artifact]).render()
 
 
-class Table(MetaflowCardComponent):
+class Table(UserComponent):
     def __init__(self, data=[[]], headers=[]):
         header_bool, data_bool = TableComponent.validate(headers, data)
         self._headers = []
@@ -69,13 +91,14 @@ class Table(MetaflowCardComponent):
             for row in self._data
         ]
 
+    @render_safely
     def render(self):
         return TableComponent(
             headers=self._headers, data=self._render_subcomponents()
         ).render()
 
 
-class Image(MetaflowCardComponent):
+class Image(UserComponent):
     @staticmethod
     def render_fail_headline(msg):
         return "[IMAGE_RENDER FAIL]: %s" % msg
@@ -203,6 +226,7 @@ class Image(MetaflowCardComponent):
                 "%s" % traceback.format_exc(),
             )
 
+    @render_safely
     def render(self):
         if self._error_comp is not None:
             return self._error_comp.render()
@@ -214,28 +238,20 @@ class Image(MetaflowCardComponent):
         ).render()
 
 
-class Error(MetaflowCardComponent):
+class Error(UserComponent):
     def __init__(self, exception, title=None):
         self._exception = exception
         self._title = title
 
+    @render_safely
     def render(self):
-        return SectionComponent(
-            title=self._title, contents=[LogComponent(repr(self._exception))]
-        ).render()
+        return LogComponent("%s\n\n%s" % (self._title, repr(self._exception))).render()
 
 
-class Section(MetaflowCardComponent):
-    def __init__(self, title=None):
-        self._title = title
-
-    def render(self):
-        return SectionComponent(self._title, None, None, []).render()
-
-
-class Markdown(MetaflowCardComponent):
+class Markdown(UserComponent):
     def __init__(self, text=None):
         self._text = text
 
+    @render_safely
     def render(self):
         return MarkdownComponent(self._text).render()
