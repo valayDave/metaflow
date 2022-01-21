@@ -1296,6 +1296,36 @@ class Task(MetaflowObject):
         else:
             return self._log_size(stream)
 
+    def sync_magic_directory(self, local_dir_path):
+        # Chase the Origin and find the magic directory for this Task
+        def _chase_origin(task):
+            task_origin = None
+            ref_task = Task(task)
+            while ref_task.origin_pathspec is not None:
+                task_origin = ref_task.origin_pathspec
+                ref_task = Task(task_origin)
+            return task_origin
+
+        global filecache
+
+        origin_task = _chase_origin(self.pathspec)
+        path_comps = self.path_components
+        task = self
+        if origin_task is not None:
+            path_comps = origin_task.split("/")
+            task = Task(origin_task)
+
+        ds_type = task.metadata_dict.get("ds-type")
+        ds_root = task.metadata_dict.get("ds-root")
+        if ds_type is None or ds_root is None:
+            return
+        if filecache is None:
+            filecache = FileCache()
+        attempt = self.current_attempt
+        filecache.sync_magic_directory(
+            ds_type, ds_root, attempt, local_dir_path, *path_comps
+        )
+
     def loglines(self, stream, as_unicode=True):
         """
         Return an iterator over (utc_timestamp, logline) tuples.

@@ -1,13 +1,14 @@
 from __future__ import print_function
 import sys
 import os
+import tempfile
 import time
 
 from types import MethodType, FunctionType
 
 from .metaflow_config import MAX_ATTEMPTS
 from .metadata import MetaDatum
-from .datastore import Inputs, TaskDataStoreSet
+from .datastore import Inputs, TaskDataStoreSet, MagicDirectory
 from .exception import (
     MetaflowInternalError,
     MetaflowDataMissing,
@@ -441,6 +442,8 @@ class MetaflowTask(object):
         logger = self.event_logger
         start = time.time()
         self.metadata.start_task_heartbeat(self.flow.name, run_id, step_name, task_id)
+
+        current._update_env({"magic_directory": MagicDirectory(output)})
         try:
             # init side cars
             logger.start()
@@ -620,7 +623,7 @@ class MetaflowTask(object):
                     )
                 ],
             )
-
+            current.magic_directory._save()
             output.save_metadata({"task_end": {}})
             output.persist(self.flow)
 

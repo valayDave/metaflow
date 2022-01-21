@@ -6,7 +6,7 @@ import time
 from tempfile import NamedTemporaryFile
 from hashlib import sha1
 
-from metaflow.datastore import DATASTORES, FlowDataStore
+from metaflow.datastore import DATASTORES, FlowDataStore, MagicDirectory
 from metaflow.datastore.content_addressed_store import BlobCache
 from metaflow.exception import MetaflowException
 from metaflow.metaflow_config import (
@@ -66,6 +66,24 @@ class FileCache(object):
     @property
     def cache_dir(self):
         return self._cache_dir
+
+    def sync_magic_directory(
+        self,
+        ds_type,
+        ds_root,
+        attempt,
+        local_dir_path,
+        flow_name,
+        run_id,
+        step_name,
+        task_id,
+    ):
+        ds = self._get_flow_datastore(ds_type, ds_root, flow_name)
+
+        task_ds = ds.get_task_datastore(
+            run_id, step_name, task_id, data_metadata={"objects": {}, "info": {}}
+        )
+        MagicDirectory._load_files(task_ds, attempt, local_dir_path)
 
     def get_logs_stream(
         self, ds_type, ds_root, stream, attempt, flow_name, run_id, step_name, task_id
