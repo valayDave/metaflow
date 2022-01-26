@@ -16,10 +16,10 @@ import re
 from .exception import CARD_ID_PATTERN, TYPE_CHECK_REGEX
 
 
-def warning_message(message, logger=None):
+def warning_message(message, logger=None, ts=False):
     msg = "[@card WARNING] %s" % message
     if logger:
-        logger(msg, timestamp=False, bad=True)
+        logger(msg, timestamp=ts, bad=True)
 
 
 class CardDecorator(StepDecorator):
@@ -97,9 +97,7 @@ class CardDecorator(StepDecorator):
                 yield p, p[prefixlen:]
 
     def _is_event_registered(self, evt_name):
-        if evt_name in self._called_once:
-            return True
-        return False
+        return evt_name in self._called_once
 
     @classmethod
     def _register_event(cls, evt_name):
@@ -138,24 +136,27 @@ class CardDecorator(StepDecorator):
         else:
             self.card_options = self.attributes["options"]
 
-        # We set the total count of decorators so that we can use it for
-        # when calling the finalize function of CardComponentCollector
-        # We set the total @card per step via calling `_set_card_counts_per_step`.
-        other_card_decorators = [
-            deco for deco in decorators if isinstance(deco, self.__class__)
-        ]
-        self._set_card_counts_per_step(step_name, len(other_card_decorators))
-
         card_type = self.attributes["type"]
         card_class = get_card_class(card_type)
 
-        if card_class is None:  # Card type was not ofund
+        evt_name = "step-init"
+        # `'%s-%s'%(evt_name,step_name)` ensures that we capture this once per @card per @step.
+        # Since there can be many steps checking if event is registered for `evt_name` will only make it check it once for all steps.
+        # Hence we have `_is_event_registered('%s-%s'%(evt_name,step_name))`
+        evt = "%s-%s" % (evt_name, step_name)
+        if not self._is_event_registered(evt):
+            # We set the total count of decorators so that we can use it for
+            # when calling the finalize function of CardComponentCollector
+            # We set the total @card per step via calling `_set_card_counts_per_step`.
+            other_card_decorators = [
+                deco for deco in decorators if isinstance(deco, self.__class__)
+            ]
+            self._set_card_counts_per_step(step_name, len(other_card_decorators))
+            self._register_event(evt)
+
+        if card_class is None:  # Card type was not found
             # todo : issue a warning about this.
             return
-
-        if card_class.ALLOW_USER_COMPONENTS:
-            self._is_editable = True
-
         if card_class.periodic:
             self._is_periodic = True
 
@@ -309,6 +310,9 @@ class CardDecorator(StepDecorator):
             temp_file.seek(0)
 
         cmd = self._make_create_command(runspec)
+
+        if temp_file is not None:
+            cmd += ["--component-file", temp_file.name]
 
         if temp_file is not None:
             cmd += ["--component-file", temp_file.name]

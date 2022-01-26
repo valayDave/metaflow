@@ -24,19 +24,6 @@ from .card_resolver import resolve_paths_from_task, resumed_info
 
 id_func = id
 
-# FIXME :  Import the changes from Netflix/metaflow#833 for Graph
-def serialize_flowgraph(flowgraph):
-    graph_dict = {}
-    for node in flowgraph:
-        graph_dict[node.name] = {
-            "type": node.type,
-            "box_next": node.type not in ("linear", "join"),
-            "box_ends": node.matching_join,
-            "next": node.out_funcs,
-            "doc": node.doc,
-        }
-    return graph_dict
-
 
 def open_in_browser(card_path):
     url = "file://" + os.path.abspath(card_path)
@@ -58,7 +45,6 @@ def resolve_task_from_pathspec(flow_name, pathspec):
 
     # since pathspec can have many variations.
     pthsplits = pathspec.split("/")
-    namespace(None)
     task = None
     run_id = None
     resolving_from = "task_pathspec"
@@ -74,19 +60,19 @@ def resolve_task_from_pathspec(flow_name, pathspec):
                 pass
     elif len(pthsplits) == 2:
         # This means runid/stepname
+        namespace(None)
         resolving_from = "step_pathspec"
         try:
             task = Step("/".join([flow_name, pathspec])).task
-            run_id = task.parent.parent.pathspec
-        except MetaflowNotFound as e:
+        except MetaflowNotFound:
             pass
     elif len(pthsplits) == 3:
         # this means runid/stepname/taskid
+        namespace(None)
         resolving_from = "task_pathspec"
         try:
             task = Task("/".join([flow_name, pathspec]))
-            run_id = task.parent.parent.pathspec
-        except MetaflowNotFound as e:
+        except MetaflowNotFound:
             pass
     else:
         # raise exception for invalid pathspec format
@@ -94,7 +80,11 @@ def resolve_task_from_pathspec(flow_name, pathspec):
             msg="The PATHSPEC argument should be of the form 'stepname' Or '<runid>/<stepname>' Or '<runid>/<stepname>/<taskid>'"
         )
 
-    return task, run_id, resolving_from
+    if task is None:
+        # raise Exception that task could not be resolved for the query.
+        raise TaskNotFoundException(pathspec, resolving_from, run_id=run_id)
+
+    return task
 
 
 def resolve_card(
@@ -105,13 +95,12 @@ def resolve_card(
     type=None,
     card_id=None,
     no_echo=False,
-    show_newest=False,
 ):
-    """Resolves the card path based on the arguments provided. We allow identifier to be a pathspec or a id of card.
+    """Resolves the card path for a query.
 
     Args:
         ctx: click context object
-        pathspec: pathspec
+        pathspec: pathspec can be `stepname` or `runid/stepname` or `runid/stepname/taskid`
         hash (optional): This is to specifically resolve the card via the hash. This is useful when there may be many card with same id or type for a pathspec.
         type : type of card
         card_id : `id` given to card
@@ -123,14 +112,7 @@ def resolve_card(
         (card_paths, card_datastore, taskpathspec) : Tuple[List[str], CardDatastore, str]
     """
     flow_name = ctx.obj.flow.name
-    (
-        task,
-        run_id,
-        resolved_from,
-    ) = resolve_task_from_pathspec(flow_name, pathspec)
-    if task is None:
-        # raise Exception that task could not be resolved for the query.
-        raise TaskNotFoundException(pathspec, resolved_from, run_id=run_id)
+    task = resolve_task_from_pathspec(flow_name, pathspec)
     card_pathspec = task.pathspec
     print_str = "Resolving card: %s" % card_pathspec
     if follow_resumed:
@@ -156,11 +138,6 @@ def resolve_card(
         raise CardNotPresentException(
             card_pathspec, card_hash=hash, card_type=type, card_id=card_id
         )
-
-    if show_newest and len(card_paths_found) > 1:
-        latest_card_path = card_datastore.get_latest_card_from_paths(card_paths_found)
-        if latest_card_path is not None:
-            card_paths_found = [latest_card_path]
 
     return card_paths_found, card_datastore, card_pathspec
 
@@ -219,10 +196,10 @@ def list_available_cards(
     for path_tuple, file_path in zip(path_tuples, card_paths):
         full_pth = card_datastore.create_full_path(file_path)
         cpr = """
-        Card Id : %s
-        Card Type : %s
-        Card Hash : %s 
-        Card Path : %s
+        Card Id: %s
+        Card Type: %s
+        Card Hash: %s 
+        Card Path: %s
         """ % (
             path_tuple.id,
             path_tuple.type,
@@ -434,7 +411,7 @@ def render_card(mf_card, task, timeout_value=None):
     default=None,
     show_default=True,
     type=str,
-    help="id of the card",
+    help="ID of the card",
 )
 @click.pass_context
 def create(
@@ -458,8 +435,13 @@ def create(
     flowname = ctx.obj.flow.name
     full_pathspec = "/".join([flowname, pathspec])
 
-    # todo : Import the changes from Netflix/metaflow#833 for Graph
-    graph_dict = serialize_flowgraph(ctx.obj.graph)
+    graph_dict, _ = ctx.obj.graph.output_steps()
+
+    # Components are rendered in a Step and added via `current.card.append` are added here.
+    component_arr = []
+    if component_file is not None:
+        with open(component_file, "r") as f:
+            component_arr = json.load(f)
 
     # Components are rendered in a Step and added via `current.card.append` are added here.
     component_arr = []
@@ -596,6 +578,7 @@ def view(
 
 @card.command()
 @click.argument("pathspec")
+@click.argument("path", required=False)
 @card_read_options_and_arguments
 @click.option(
     "--show-newest/--no-show-newest",
@@ -607,6 +590,7 @@ def view(
 def get(
     ctx,
     pathspec,
+    path,
     hash=None,
     type=None,
     id=None,
@@ -619,6 +603,11 @@ def get(
         - <stepname>\n
         - <runid>/<stepname>\n
         - <runid>/<stepname>/<taskid>\n
+
+    Save the card by adding the `path` argument.
+    ```
+    python myflow.py card get start a.html --type default
+    ```
     """
     card_id = id
     available_card_paths, card_datastore, pathspec = resolve_card(
@@ -631,6 +620,9 @@ def get(
         show_newest=show_newest,
     )
     if len(available_card_paths) == 1:
+        if path is not None:
+            card_datastore.cache_locally(available_card_paths[0], path)
+            return
         print(card_datastore.get_card_html(available_card_paths[0]))
     else:
         list_available_cards(

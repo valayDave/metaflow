@@ -9,7 +9,7 @@
 </script>
 
 {#if columns && data}
-  <div class="tableContainer">
+  <div class="tableContainer" data-component="table-horizontal">
     <table>
       <thead>
         <tr>
@@ -22,7 +22,7 @@
         {#each data as row}
           <tr>
             {#each row as col}
-              <td><DataRenderer componentData={col}/></td>
+              <td><DataRenderer componentData={col} /></td>
             {/each}
           </tr>
         {/each}
@@ -34,7 +34,6 @@
 <style>
   .tableContainer {
     overflow: auto;
-    max-height: 50rem;
   }
 
   th {

@@ -10,6 +10,7 @@ class CardsWithIdTest(MetaflowTest):
 
     PRIORITY = 3
 
+    @tag('environment(vars={"METAFLOW_CARD_NO_WARNING": "True"})')
     @tag('card(type="test_editable_card",id="xyz")')
     @tag('card(type="test_editable_card",id="abc")')
     @steps(0, ["start"])

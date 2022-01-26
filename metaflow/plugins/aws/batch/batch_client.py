@@ -85,19 +85,9 @@ class BatchJob(object):
             raise BatchJobException(
                 "Unable to launch AWS Batch job. No IAM role specified."
             )
-        if "jobDefinition" not in self.payload:
-            self.payload["jobDefinition"] = self._register_job_definition(
-                self._image,
-                self._iam_role,
-                self.payload["job_queue"],
-                self._execution_role,
-                self._shared_memory,
-                self._max_swap,
-                self._swappiness,
-            )
 
         # Multinode
-        if getattr(self, "num_parallel", 0) > 1:
+        if getattr(self, "num_parallel", 0) >= 1:
             num_nodes = self.num_parallel
             main_task_override = copy.deepcopy(self.payload["containerOverrides"])
 
@@ -127,14 +117,21 @@ class BatchJob(object):
             )
 
             secondary_task_container_override["command"][-1] = secondary_commands
-            self.payload["nodeOverrides"] = {
-                "nodePropertyOverrides": [
-                    {"targetNodes": "0:0", "containerOverrides": main_task_override},
+            secondary_overrides = (
+                [
                     {
                         "targetNodes": "1:{}".format(num_nodes - 1),
                         "containerOverrides": secondary_task_container_override,
-                    },
-                ],
+                    }
+                ]
+                if num_nodes > 1
+                else []
+            )
+            self.payload["nodeOverrides"] = {
+                "nodePropertyOverrides": [
+                    {"targetNodes": "0:0", "containerOverrides": main_task_override},
+                ]
+                + secondary_overrides,
             }
             del self.payload["containerOverrides"]
 
@@ -264,8 +261,8 @@ class BatchJob(object):
                     {"sourceVolume": name, "containerPath": host_path}
                 )
 
-        self.num_parallel = num_parallel or 1
-        if self.num_parallel > 1:
+        self.num_parallel = num_parallel or 0
+        if self.num_parallel >= 1:
             job_definition["type"] = "multinode"
             job_definition["nodeProperties"] = {
                 "numNodes": self.num_parallel,
@@ -278,11 +275,14 @@ class BatchJob(object):
                     # differently, also the job definition must match those patterns
                     "container": job_definition["containerProperties"],
                 },
-                {
-                    "targetNodes": "1:{}".format(self.num_parallel - 1),
-                    "container": job_definition["containerProperties"],
-                },
             ]
+            if self.num_parallel > 1:
+                job_definition["nodeProperties"]["nodeRangeProperties"].append(
+                    {
+                        "targetNodes": "1:{}".format(self.num_parallel - 1),
+                        "container": job_definition["containerProperties"],
+                    }
+                )
             del job_definition["containerProperties"]  # not used for multi-node
 
         # check if job definition already exists
