@@ -644,6 +644,7 @@ def _get_extension_packages():
             if pkg.config_module is None:
                 if k == "plugins.cards":
                     # This is allowed here but we only keep one
+                    final_list.append(pkg)
                     if have_null_config:
                         continue
                     have_null_config = True
@@ -658,7 +659,6 @@ def _get_extension_packages():
                         % (package_path, k)
                     )
             final_list.append(pkg)
-
         extension_points_to_pkg[k] = final_list
     return mf_ext_packages, extension_points_to_pkg
 
@@ -700,7 +700,6 @@ def _get_extension_config(distribution_name, tl_pkg, extension_point, config_mod
     _ext_debug("\t\tAttempting to load '%s'" % module_name)
 
     extension_module = _attempt_load_module(module_name)
-
     if extension_module:
         # We update the path to this module; this will be helpful if/when we need
         # to package modules so we have the base path for them.
@@ -709,7 +708,9 @@ def _get_extension_config(distribution_name, tl_pkg, extension_point, config_mod
         # and creates intermediate directories and remote puts everything in one place)
         if _all_packages[distribution_name]["root_path"] is None:
             root_path = "/".join(
-                extension_module.__file__.split("/")[: -len(module_name.split("."))]
+                list(extension_module.__path__)[0].split("/")[
+                    : -len(module_name.split("."))
+                ]
             )
 
             _ext_debug(

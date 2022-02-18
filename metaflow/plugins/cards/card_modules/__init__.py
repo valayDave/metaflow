@@ -78,7 +78,7 @@ def _load_external_cards():
                 if c.type in external_cards:
                     # todo Warn user of duplicate card
                     continue
-                # external_cards[c.type] = c
+                external_cards[c.type] = c
                 card_arr.append(c)
     return card_arr
 
