@@ -652,6 +652,7 @@ class StepFunctions(object):
             # AWS_BATCH_JOB_ATTEMPT as the job counter.
             "retry_count": "$((AWS_BATCH_JOB_ATTEMPT-1))",
         }
+
         return (
             Batch(self.metadata, self.environment)
             .create_job(
