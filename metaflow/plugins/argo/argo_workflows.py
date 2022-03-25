@@ -311,7 +311,7 @@ class ArgoWorkflows(object):
                 # TODO: Service account names are currently set in the templates. We
                 #       can specify the default service account name here to reduce
                 #       the size of the generated YAML by a tiny bit.
-                #.automount_service_account_token()
+                # .automount_service_account_token()
                 # TODO: Support ImagePullSecrets for Argo & Kubernetes
                 # .image_pull_secrets(...)
                 # Limit workflow parallelism
