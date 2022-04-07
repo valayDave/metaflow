@@ -202,6 +202,7 @@ class KubernetesJob(object):
                         # affinity=?,
                         containers=[
                             client.V1Container(
+                                image_pull_policy = self._kwargs.get("image_pull_policy", "IfNotPresent"),
                                 command=self._kwargs["command"],
                                 env=[
                                     client.V1EnvVar(name=k, value=str(v))
