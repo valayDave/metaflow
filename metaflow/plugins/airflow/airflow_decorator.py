@@ -4,7 +4,8 @@ import time
 
 from metaflow.decorators import StepDecorator
 from metaflow.metadata import MetaDatum
-from .airflow_utils import TASK_ID_XCOM_KEY
+from .airflow_utils import TASK_ID_XCOM_KEY, TASK_PATHSPEC_KEY
+from metaflow import current
 
 
 K8S_XCOM_DIR_PATH = "/airflow/xcom"
@@ -46,6 +47,7 @@ class AirflowInternalDecorator(StepDecorator):
         meta = {}
         meta["airflow-dag-run-id"] = os.environ["METAFLOW_AIRFLOW_DAG_RUN_ID"]
         meta["airflow-job-id"] = os.environ["METAFLOW_AIRFLOW_JOB_ID"]
+        meta["airflow-dag-id"] = os.environ["METAFLOW_AIRFLOW_DAG_ID"]
         entries = [
             MetaDatum(
                 field=k, value=v, type=k, tags=["attempt_id:{0}".format(retry_count)]
@@ -57,5 +59,6 @@ class AirflowInternalDecorator(StepDecorator):
         push_xcom_values(
             {
                 TASK_ID_XCOM_KEY: os.environ["METAFLOW_AIRFLOW_TASK_ID"],
+                TASK_PATHSPEC_KEY: current.pathspec,
             }
         )

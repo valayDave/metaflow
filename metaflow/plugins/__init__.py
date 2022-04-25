@@ -152,8 +152,15 @@ _merge_lists(METADATA_PROVIDERS, _ext_plugins["METADATA_PROVIDERS"], "TYPE")
 from .conda.conda_flow_decorator import CondaFlowDecorator
 from .aws.step_functions.schedule_decorator import ScheduleDecorator
 from .project_decorator import ProjectDecorator
+from .trigger import TriggerDecorator, TriggerOnFinishDecorator
 
-FLOW_DECORATORS = [CondaFlowDecorator, ScheduleDecorator, ProjectDecorator]
+FLOW_DECORATORS = [
+    TriggerOnFinishDecorator,
+    TriggerDecorator,
+    CondaFlowDecorator,
+    ScheduleDecorator,
+    ProjectDecorator,
+]
 _merge_lists(FLOW_DECORATORS, _ext_plugins["FLOW_DECORATORS"], "name")
 
 # Cards

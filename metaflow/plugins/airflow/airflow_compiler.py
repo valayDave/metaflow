@@ -10,7 +10,7 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 import metaflow.util as util
-from metaflow import R
+from metaflow import R, current
 from metaflow.decorators import flow_decorators
 from metaflow.exception import MetaflowException
 from metaflow.metaflow_config import (
@@ -23,6 +23,7 @@ from metaflow.metaflow_config import (
 )
 from metaflow.parameters import deploy_time_eval
 from metaflow.plugins.aws.eks.kubernetes import Kubernetes, sanitize_label_value
+from metaflow.plugins.project_decorator import format_name as format_project_name
 from metaflow.plugins.cards.card_modules import chevron
 from metaflow.plugins.timeout_decorator import get_run_time_limit_for_task
 from metaflow.util import dict_to_cli_options, get_username
@@ -32,6 +33,7 @@ from .airflow_utils import (
     AIRFLOW_TASK_ID_TEMPLATE_VALUE,
     RUN_ID_LEN,
     TASK_ID_XCOM_KEY,
+    TASK_PATHSPEC_KEY,
     AirflowTask,
     Workflow,
 )
@@ -153,7 +155,7 @@ class Airflow(object):
     # Airflow run_ids are of the form : "manual__2022-03-15T01:26:41.186781+00:00"
     # Such run-ids break the `metaflow.util.decompress_list`; this is why we hash the runid
     run_id = (
-        "%s-$(echo -n {{ run_id }} | md5sum | awk '{print $1}' | awk '{print substr ($0, 0, %s)}')"
+        "%s-$(echo -n {{ run_id }}-{{ dag_run.dag_id }} | md5sum | awk '{print $1}' | awk '{print substr ($0, 0, %s)}')"
         % (AIRFLOW_PREFIX, str(RUN_ID_LEN))
     )
     # We do echo -n because emits line breaks and we dont want to consider that since it we want same hash value when retrieved in python.
@@ -208,6 +210,65 @@ class Airflow(object):
         _, self.graph_structure = self.graph.output_steps()
         self.worker_pool = worker_pool
         self.set_active = set_active
+        self.event_triggered = False
+
+    def _get_finish_triggers(self):
+        _SENSOR_ARG_KEY = "sensor_args"
+        finish_triggers = self.flow._flow_decorators.get("trigger_on_finish")
+        if not finish_triggers:
+            return None
+        if "flow" not in finish_triggers.attributes:
+            return None
+        projdeco = self.flow._flow_decorators.get("project")
+        sensor_dag_id = finish_triggers.attributes["flow"]
+        if projdeco:
+            sensor_dag_id = format_project_name(
+                finish_triggers.attributes["flow"],
+                current.project_name,
+                current.is_production,
+                projdeco._options["branch"],
+                get_username(),
+            )
+
+        sensor_name = "%s_sensor" % sensor_dag_id
+        # Can take args based on :
+        # https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/sensors/base/index.html#airflow.sensors.base.BaseSensorOperator
+        def make_defaults(ssa):
+            return {
+                k: ssa[k] if k in ssa else v
+                for k, v in dict(
+                    poke_interval=10,
+                    timeout=300,
+                    soft_fail=False,
+                    retries=1,
+                ).items()
+            }
+
+        task = AirflowTask(
+            sensor_name,
+            operator_type="ExternalTaskSensor",
+            upstream_pathspec=self._parent_pathspec_xcom("end", sensor_dag_id),
+        ).set_operator_args(
+            external_task_id=None,
+            external_dag_id=sensor_dag_id,
+            **make_defaults(
+                finish_triggers.attributes[_SENSOR_ARG_KEY]
+                if _SENSOR_ARG_KEY in finish_triggers.attributes
+                else {}
+            ),
+        )
+        self.event_triggered = True
+
+        return task
+
+    def _get_triggers(self):
+        triggers = self.flow._flow_decorators.get("trigger")
+        if not triggers:
+            return None
+        if "sensor" in triggers.attributes:
+            pass
+        # Todo : Add support For PythonSensor, S3KeySensor, SqlSensor
+        return None
 
     def _get_schedule(self):
         # Using the cron presets provided here :
@@ -351,6 +412,17 @@ class Airflow(object):
             self._make_parent_input_path(s, only_task_id=True) for s in step_names
         )
 
+    def _parent_pathspec_xcom(
+        self,
+        step_name,
+        dag_id,
+    ):
+        return "{{ task_instance.xcom_pull(task_ids='%s',dag_id='%s')['%s'] }}" % (
+            step_name,
+            dag_id,
+            TASK_PATHSPEC_KEY,
+        )
+
     def _make_parent_input_path(self, step_name, only_task_id=False):
         # This is set using the `airflow_internal` decorator.
         # This will pull the `return_value` xcom which holds a dictionary.
@@ -366,7 +438,7 @@ class Airflow(object):
 
         return "%s%s" % (self.run_id, task_id_string)
 
-    def _to_job(self, node):
+    def _to_job(self, node, upstream_pathspec=False):
         # supported compute : k8s (v1), local(v2), batch(v3)
         attrs = {
             "metaflow.owner": self.username,
@@ -400,6 +472,11 @@ class Airflow(object):
         if env_deco:
             env = env_deco[0].attributes["vars"]
 
+        if upstream_pathspec:
+            env["METAFLOW_UPSTREAM_EVENT_TRIGGER_PATHSPEC"] = upstream_pathspec
+
+        if self.event_triggered:
+            env["METAFLOW_EVENTS_BACKEND"] = "airflow"
         # The Below If/Else Block handle "Input Paths".
         # Input Paths help manage dataflow across the graph.
         if node.name == "start":
@@ -570,7 +647,9 @@ class Airflow(object):
                     "to Airflow is not supported currently."
                 )
 
-            state = AirflowTask(node.name).set_operator_args(**self._to_job(node))
+            state = AirflowTask(node.name).set_operator_args(
+                **self._to_job(node, upstream_pathspec=workflow.upstream_pathspec)
+            )
 
             if node.type == "end":
                 workflow.add_state(state)
@@ -608,6 +687,8 @@ class Airflow(object):
         )
         if self.set_active:
             other_args["is_paused_upon_creation"] = False
+
+        trigger_task = self._get_finish_triggers()
         workflow = Workflow(
             dag_id=self.name,
             default_args=self._create_defaults(),
@@ -618,10 +699,19 @@ class Airflow(object):
             tags=self.tags,
             file_path=self._file_path,
             graph_structure=self.graph_structure,
-            **other_args
+            upstream_pathspec=None
+            if not trigger_task
+            else trigger_task.upstream_pathspec,
+            **other_args,
         )
         workflow = _visit(self.graph["start"], workflow)
+
+        if trigger_task:
+            workflow.graph_structure.insert(0, trigger_task.name)
+            workflow.add_state(trigger_task)
+
         workflow.set_parameters(self.metaflow_parameters)
+
         return self._create_airflow_file(workflow.to_dict())
 
     def _create_airflow_file(self, json_dag):

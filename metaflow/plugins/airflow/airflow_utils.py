@@ -16,6 +16,7 @@ class KubernetesProviderNotFound(Exception):
 LABEL_VALUE_REGEX = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-\_\.]{0,61}[a-zA-Z0-9])?$")
 
 TASK_ID_XCOM_KEY = "metaflow_task_id"
+TASK_PATHSPEC_KEY = "metaflow_pathspec"
 RUN_ID_LEN = 12
 TASK_ID_LEN = 8
 
@@ -27,7 +28,9 @@ TASK_ID_LEN = 8
 # we can rename steps in a foreach with indexes (eg. `stepname-$index`) to create those steps.
 # Hence : Foreachs will require some special form of plumbing.
 # https://stackoverflow.com/questions/62962386/can-an-airflow-task-dynamically-generate-a-dag-at-runtime
-AIRFLOW_TASK_ID_TEMPLATE_VALUE = "arf-{{ [run_id, ti.task_id ] | task_id_creator  }}"
+AIRFLOW_TASK_ID_TEMPLATE_VALUE = (
+    "arf-{{ [run_id, dag_run.dag_id , ti.task_id ] | task_id_creator  }}"
+)
 
 
 def sanitize_label_value(val):
@@ -196,6 +199,7 @@ def set_k8s_operator_args(flow_name, step_name, operator_args):
                 METAFLOW_AIRFLOW_TASK_ID=task_id,
                 METAFLOW_AIRFLOW_DAG_RUN_ID="{{run_id}}",
                 METAFLOW_AIRFLOW_JOB_ID="{{ti.job_id}}",
+                METAFLOW_AIRFLOW_DAG_ID="{{dag_run.dag_id}}",
                 METAFLOW_ATTEMPT_NUMBER=attempt,
             ).items()
         ]
@@ -285,6 +289,12 @@ def set_k8s_operator_args(flow_name, step_name, operator_args):
     return args
 
 
+def get_external_task_sensor():
+    from airflow.sensors.external_task_sensor import ExternalTaskSensor
+
+    return ExternalTaskSensor
+
+
 def get_k8s_operator():
 
     try:
@@ -307,11 +317,14 @@ def get_k8s_operator():
 
 
 class AirflowTask(object):
-    def __init__(self, name, operator_type="kubernetes", flow_name=None):
+    def __init__(
+        self, name, operator_type="kubernetes", flow_name=None, upstream_pathspec=None
+    ):
         self.name = name
         self._operator_args = None
         self._operator_type = operator_type
         self._flow_name = flow_name
+        self.upstream_pathspec = upstream_pathspec
 
     def set_operator_args(self, **kwargs):
         self._operator_args = kwargs
@@ -342,19 +355,37 @@ class AirflowTask(object):
         )
         return KubernetesPodOperator(**k8s_args)
 
+    def _task_sensor(self):
+        TaskSensor = get_external_task_sensor()
+        # ExternalTaskSensors uses an execution_date of a dag to
+        # determine the appropriate DAG.
+        # This is set to the exact date the current dag gets executed on.
+        # For example if "DagA" (Upstream DAG) got scheduled at
+        # 12 Jan 4:00 PM PDT then "DagB"(current DAG)'s task sensor will try to
+        # look for a "DagA" that got executed at 12 Jan 4:00 PM PDT **exactly**.
+        # They also support a `execution_timeout` argument to
+        return TaskSensor(
+            task_id=self.name, check_existence=True, **self._operator_args
+        )
+
     def to_task(self):
         if self._operator_type == "kubernetes":
             return self._kubenetes_task()
+        elif self._operator_type == "ExternalTaskSensor":
+            return self._task_sensor()
 
 
 class Workflow(object):
-    def __init__(self, file_path=None, graph_structure=None, **kwargs):
+    def __init__(
+        self, file_path=None, graph_structure=None, upstream_pathspec=None, **kwargs
+    ):
         self._dag_instantiation_params = AirflowDAGArgs(**kwargs)
         self._file_path = file_path
         tree = lambda: defaultdict(tree)
         self.states = tree()
         self.metaflow_params = None
         self.graph_structure = graph_structure
+        self.upstream_pathspec = upstream_pathspec
 
     def set_parameters(self, params):
         self.metaflow_params = params
