@@ -134,6 +134,9 @@ DEFAULT_CONTAINER_IMAGE = from_conf("METAFLOW_DEFAULT_CONTAINER_IMAGE")
 # Default container registry
 DEFAULT_CONTAINER_REGISTRY = from_conf("METAFLOW_DEFAULT_CONTAINER_REGISTRY")
 
+# Ngrok Debug Decorator Configuration
+NGROK_KEY = from_conf("METAFLOW_NGROK_KEY", None)
+
 ###
 # AWS Batch configuration
 ###
