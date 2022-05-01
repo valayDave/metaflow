@@ -58,10 +58,8 @@ class BreakPoint(object):
         self._remote_pdb = None
 
     def _setup_ngrok_tunnel(self):
-        try:
-            from pyngrok import ngrok
-        except ImportError:
-            return None
+        from metaflow._vendor.pyngrok import ngrok
+
         if not self._auth_token:
             return None
         ngrok.set_auth_token(self._auth_token)
@@ -110,20 +108,9 @@ class NgrokDebugDecorator(DebugDecorator):
     name = "remote_debugger"
 
     def _validate_ngrok(self):
-        try:
-            from pyngrok import ngrok
-        except:
-            return False
         if not self.attributes["auth_token"]:
             return False
         return True
-
-    def runtime_task_created(
-        self, task_datastore, task_id, split_index, input_paths, is_cloned, ubf_context
-    ):
-        if not self.attributes["auth_token"]:
-            if NGROK_KEY:
-                self.attributes["auth_token"] = NGROK_KEY
 
     def task_pre_step(
         self,
@@ -139,17 +126,17 @@ class NgrokDebugDecorator(DebugDecorator):
         ubf_context,
         inputs,
     ):
+        if not self.attributes["auth_token"]:
+            if NGROK_KEY:
+                self.attributes["auth_token"] = NGROK_KEY
         self._isvalid = self._validate_ngrok()
-        return super().task_pre_step(
-            step_name,
-            task_datastore,
-            metadata,
-            run_id,
-            task_id,
-            flow,
-            graph,
-            retry_count,
-            max_user_code_retries,
-            ubf_context,
-            inputs,
+        from metaflow import current
+
+        breakpoint = BreakPoint(
+            self.attributes["host"],
+            self.attributes["port"],
+            is_remote=True,
+            is_active=self._isvalid,
+            auth_token=self.attributes["auth_token"],
         )
+        current._update_env({"debug": breakpoint})
