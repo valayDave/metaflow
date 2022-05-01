@@ -11,7 +11,7 @@ import os
 class DebugDecorator(StepDecorator):
     name = "debugger"
 
-    defaults = dict(port=8292, host="localhost")
+    defaults = dict(port=8292, host="localhost", auth_token=None)
 
     def __init__(self, attributes=None, statically_defined=False):
         super().__init__(attributes, statically_defined)
@@ -38,17 +38,19 @@ class DebugDecorator(StepDecorator):
             self.attributes["port"],
             is_remote=False,
             is_active=self._isvalid,
+            auth_token=self.attributes["auth_token"],
         )
         current._update_env({"debug": breakpoint})
 
 
 class BreakPoint(object):
-    def __init__(self, host, port, is_remote=False, is_active=False):
-        self._host, self._port, self._is_remote, self._is_active = (
+    def __init__(self, host, port, is_remote=False, is_active=False, auth_token=None):
+        self._host, self._port, self._is_remote, self._is_active, self._auth_token = (
             host,
             port,
             is_remote,
             is_active,
+            auth_token,
         )
 
         self._ngrok_tunnel, self._debug_host, self._debug_port = None, None, None
@@ -58,11 +60,11 @@ class BreakPoint(object):
     def _setup_ngrok_tunnel(self):
         try:
             from pyngrok import ngrok
-        except:
+        except ImportError:
             return None
-        if not NGROK_KEY:
+        if not self._auth_token:
             return None
-        ngrok.set_auth_token(NGROK_KEY)
+        ngrok.set_auth_token(self._auth_token)
         debugger_terminal = ngrok.connect(self._port, "tcp")
         debug_host, debug_port = debugger_terminal.public_url.split("tcp://")[1].split(
             ":"
@@ -112,10 +114,16 @@ class NgrokDebugDecorator(DebugDecorator):
             from pyngrok import ngrok
         except:
             return False
-        ngrok_key = os.environ.get("METAFLOW_NGROK_KEY", None)
-        if not ngrok_key:
+        if not self.attributes["auth_token"]:
             return False
         return True
+
+    def runtime_task_created(
+        self, task_datastore, task_id, split_index, input_paths, is_cloned, ubf_context
+    ):
+        if not self.attributes["auth_token"]:
+            if NGROK_KEY:
+                self.attributes["auth_token"] = NGROK_KEY
 
     def task_pre_step(
         self,
