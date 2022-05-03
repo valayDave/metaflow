@@ -1,6 +1,8 @@
 import functools
+import random
 import time
 from metaflow.decorators import StepDecorator
+from metaflow.exception import MetaflowException
 from metaflow.metaflow_config import NGROK_KEY
 from .remote_pdb import RemotePdb
 from pdb import set_trace
@@ -11,11 +13,35 @@ import os
 class DebugDecorator(StepDecorator):
     name = "debugger"
 
-    defaults = dict(port=8292, host="localhost", auth_token=None)
+    defaults = dict(
+        host="localhost",
+        port=9983,
+        auth_token=None,
+    )
+
+    def _validate_ngrok(self):
+        if not self.attributes["auth_token"]:
+            raise MetaflowException(
+                "Ngrok `auth_token` required when calling @debugger with @batch/@kubernetes. "
+                "Set the token via `auth_token` in @debugger or set the `METAFLOW_NGROK_KEY` environment variable."
+            )
+        return True
 
     def __init__(self, attributes=None, statically_defined=False):
         super().__init__(attributes, statically_defined)
         self._isvalid = True
+        self.backend = None
+        self._is_remote = False
+
+    def step_init(
+        self, flow, graph, step_name, decorators, environment, flow_datastore, logger
+    ):
+        remote_decos = [
+            deco for deco in decorators if deco.name in ["kubernetes", "batch"]
+        ]
+        if len(remote_decos) > 0:
+            self.backend = "ngrok"
+            self._is_remote = True
 
     def task_pre_step(
         self,
@@ -31,12 +57,20 @@ class DebugDecorator(StepDecorator):
         ubf_context,
         inputs,
     ):
+        self.port = self.attributes["port"]
+        # print("Using Port ",self.port)
+        if self.backend == "ngrok":
+            if not self.attributes["auth_token"]:
+                if NGROK_KEY:
+                    self.attributes["auth_token"] = NGROK_KEY
+            self._isvalid = self._validate_ngrok()
+
         from metaflow import current
 
         breakpoint = BreakPoint(
             self.attributes["host"],
-            self.attributes["port"],
-            is_remote=False,
+            self.port,
+            is_remote=self._is_remote,
             is_active=self._isvalid,
             auth_token=self.attributes["auth_token"],
         )
@@ -102,41 +136,3 @@ class BreakPoint(object):
         self._activated = True
         self._remote_pdb = RemotePdb(self._host, self._port, quiet=True)
         return self._remote_pdb.set_trace()
-
-
-class NgrokDebugDecorator(DebugDecorator):
-    name = "remote_debugger"
-
-    def _validate_ngrok(self):
-        if not self.attributes["auth_token"]:
-            return False
-        return True
-
-    def task_pre_step(
-        self,
-        step_name,
-        task_datastore,
-        metadata,
-        run_id,
-        task_id,
-        flow,
-        graph,
-        retry_count,
-        max_user_code_retries,
-        ubf_context,
-        inputs,
-    ):
-        if not self.attributes["auth_token"]:
-            if NGROK_KEY:
-                self.attributes["auth_token"] = NGROK_KEY
-        self._isvalid = self._validate_ngrok()
-        from metaflow import current
-
-        breakpoint = BreakPoint(
-            self.attributes["host"],
-            self.attributes["port"],
-            is_remote=True,
-            is_active=self._isvalid,
-            auth_token=self.attributes["auth_token"],
-        )
-        current._update_env({"debug": breakpoint})
