@@ -153,7 +153,7 @@ class Airflow(object):
     # Airflow run_ids are of the form : "manual__2022-03-15T01:26:41.186781+00:00"
     # Such run-ids break the `metaflow.util.decompress_list`; this is why we hash the runid
     run_id = (
-        "%s-$(echo -n {{ run_id }} | md5sum | awk '{print $1}' | awk '{print substr ($0, 0, %s)}')"
+        "%s-$(echo -n {{ run_id }}-{{ dag_run.dag_id }} | md5sum | awk '{print $1}' | awk '{print substr ($0, 0, %s)}')"
         % (AIRFLOW_PREFIX, str(RUN_ID_LEN))
     )
     # We do echo -n because emits line breaks and we dont want to consider that since it we want same hash value when retrieved in python.
