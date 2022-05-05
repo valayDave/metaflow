@@ -100,6 +100,8 @@ class Decorator(object):
 
     name = "NONAME"
     defaults = {}
+    # `allow_multiple` allows setting many decorators of the same type to a step/flow.
+    allow_multiple = False
 
     def __init__(self, attributes=None, statically_defined=False):
         self.attributes = self.defaults.copy()
@@ -225,9 +227,6 @@ class StepDecorator(Decorator):
                   step.__name__ etc., so that we don't have to
                   pass them around with every lifecycle call.
     """
-
-    # `allow_multiple` allows setting many decorators of the same type to a step.
-    allow_multiple = False
 
     def step_init(
         self, flow, graph, step_name, decorators, environment, flow_datastore, logger
@@ -374,7 +373,7 @@ def _base_flow_decorator(decofunc, *args, **kwargs):
         if isinstance(cls, type) and issubclass(cls, FlowSpec):
             # flow decorators add attributes in the class dictionary,
             # _flow_decorators.
-            if decofunc.name in cls._flow_decorators:
+            if decofunc.name in cls._flow_decorators and not decofunc.allow_multiple:
                 raise DuplicateFlowDecoratorException(decofunc.name)
             else:
                 cls._flow_decorators[decofunc.name] = decofunc(
