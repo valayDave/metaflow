@@ -84,8 +84,10 @@ class AirflowSensorDecorator(FlowDecorator):
         poke_interval=60,
         mode="reschedule",
         exponential_backoff=True,
+        pool=None,
         soft_fail=False,
         name=None,
+        description=None,
     )
 
     operator_type = None
@@ -101,6 +103,10 @@ class AirflowSensorDecorator(FlowDecorator):
         """
         task_args = dict(**self.attributes)
         del task_args["name"]
+        if task_args["description"] is not None:
+            task_args["doc"] = task_args["description"]
+        del task_args["description"]
+        task_args["do_xcom_push"] = True
         return task_args
 
     def create_task(self):
@@ -162,8 +168,7 @@ class ExternalTaskSensorDecorator(AirflowSensorDecorator):
     )
 
     def serialize_operator_args(self):
-        task_args = dict(**self.attributes)
-        del task_args["name"]
+        task_args = super().serialize_operator_args()
         if task_args["execution_delta"] is not None:
             task_args["execution_delta"] = dict(
                 seconds=task_args["execution_delta"].total_seconds()
