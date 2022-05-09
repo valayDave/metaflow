@@ -13,6 +13,10 @@ class KubernetesProviderNotFound(Exception):
     headline = "Kubernetes provider not found"
 
 
+class AirflowSensorNotFound(Exception):
+    headline = "Sensor package not found"
+
+
 LABEL_VALUE_REGEX = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-\_\.]{0,61}[a-zA-Z0-9])?$")
 
 TASK_ID_XCOM_KEY = "metaflow_task_id"
@@ -27,7 +31,19 @@ TASK_ID_LEN = 8
 # we can rename steps in a foreach with indexes (eg. `stepname-$index`) to create those steps.
 # Hence : Foreachs will require some special form of plumbing.
 # https://stackoverflow.com/questions/62962386/can-an-airflow-task-dynamically-generate-a-dag-at-runtime
-AIRFLOW_TASK_ID_TEMPLATE_VALUE = "arf-{{ [run_id, ti.task_id ] | task_id_creator  }}"
+AIRFLOW_TASK_ID_TEMPLATE_VALUE = (
+    "arf-{{ [run_id, ti.task_id, dag_run.dag_id ] | task_id_creator  }}"
+)
+
+
+class SensorNames:
+    EXTERNAL_TASK_SENSOR = "ExternalTaskSensor"
+    SQL_SENSOR = "SQLSensor"
+    S3_SENSOR = "S3KeySensor"
+
+    @classmethod
+    def get_supported_sensors(cls):
+        return list(cls.__dict__.values())
 
 
 def sanitize_label_value(val):
@@ -298,12 +314,50 @@ def get_k8s_operator():
             )
         except ImportError as e:
             raise KubernetesProviderNotFound(
-                "Running this DAG requires a `KubernetesPodOperator`. "
+                "This DAG requires a `KubernetesPodOperator`. "
                 "Install the Airflow Kubernetes provider using : "
                 "`pip install apache-airflow-providers-cncf-kubernetes`"
             )
 
     return KubernetesPodOperator
+
+
+def _parse_sensor_args(name, kwargs):
+    if name == SensorNames.EXTERNAL_TASK_SENSOR:
+        if "execution_delta" in kwargs:
+            if type(kwargs["execution_delta"]) == dict:
+                kwargs["execution_delta"] = timedelta(**kwargs["execution_delta"])
+            else:
+                del kwargs["execution_delta"]
+    return kwargs
+
+
+def _get_sensor(name):
+    if name == SensorNames.EXTERNAL_TASK_SENSOR:
+        # ExternalTaskSensors uses an execution_date of a dag to
+        # determine the appropriate DAG.
+        # This is set to the exact date the current dag gets executed on.
+        # For example if "DagA" (Upstream DAG) got scheduled at
+        # 12 Jan 4:00 PM PDT then "DagB"(current DAG)'s task sensor will try to
+        # look for a "DagA" that got executed at 12 Jan 4:00 PM PDT **exactly**.
+        # They also support a `execution_timeout` argument to
+        from airflow.sensors.external_task_sensor import ExternalTaskSensor
+
+        return ExternalTaskSensor
+    elif name == SensorNames.S3_SENSOR:
+        try:
+            from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
+        except ImportError:
+            raise AirflowSensorNotFound(
+                "This DAG requires a `S3KeySensor`. "
+                "Install the Airflow AWS provider using : "
+                "`pip install apache-airflow-providers-amazon`"
+            )
+        return S3KeySensor
+    elif name == SensorNames.SQL_SENSOR:
+        from airflow.sensors.sql import SqlSensor
+
+        return SqlSensor
 
 
 class AirflowTask(object):
@@ -316,6 +370,13 @@ class AirflowTask(object):
     def set_operator_args(self, **kwargs):
         self._operator_args = kwargs
         return self
+
+    def _make_sensor(self):
+        TaskSensor = _get_sensor(self._operator_type)
+        return TaskSensor(
+            task_id=self.name,
+            **_parse_sensor_args(self._operator_type, self._operator_args)
+        )
 
     def to_dict(self):
         return {
@@ -345,6 +406,8 @@ class AirflowTask(object):
     def to_task(self):
         if self._operator_type == "kubernetes":
             return self._kubenetes_task()
+        elif self._operator_type in SensorNames.get_supported_sensors():
+            return self._make_sensor()
 
 
 class Workflow(object):

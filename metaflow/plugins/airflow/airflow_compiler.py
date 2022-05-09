@@ -35,6 +35,7 @@ from .airflow_utils import (
     AirflowTask,
     Workflow,
 )
+from .airflow_decorator import AirflowSensorDecorator, SUPPORTED_SENSORS
 
 AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "af_deploy.py")
 
@@ -560,6 +561,14 @@ class Airflow(object):
         cmds.append(" ".join(entrypoint + top_level + step))
         return cmds
 
+    def _collect_flow_sensors(self):
+        decos_lists = [
+            self.flow._flow_decorators.get(s)
+            for s in SUPPORTED_SENSORS
+            if self.flow._flow_decorators.get(s) is not None
+        ]
+        return [deco.create_task() for decos in decos_lists for deco in decos]
+
     def compile(self):
 
         # Visit every node of the flow and recursively build the state machine.
@@ -608,6 +617,8 @@ class Airflow(object):
         )
         if self.set_active:
             other_args["is_paused_upon_creation"] = False
+
+        appending_sensors = self._collect_flow_sensors()
         workflow = Workflow(
             dag_id=self.name,
             default_args=self._create_defaults(),
@@ -622,6 +633,10 @@ class Airflow(object):
         )
         workflow = _visit(self.graph["start"], workflow)
         workflow.set_parameters(self.metaflow_parameters)
+        if len(appending_sensors) > 0:
+            for s in appending_sensors:
+                workflow.add_state(s)
+            workflow.graph_structure.insert(0, [[s.name] for s in appending_sensors])
         return self._create_airflow_file(workflow.to_dict())
 
     def _create_airflow_file(self, json_dag):
