@@ -13,9 +13,16 @@ import re
 VALID_NAME = re.compile("[^a-zA-Z0-9_\-\.]")
 
 
-def _validate_workflow(graph, flow_datastore, metadata):
+def _validate_workflow(flow, graph, flow_datastore, metadata):
     # check for other compute related decorators.
     # supported compute : k8s (v1), local(v2), batch(v3),
+    # todo : check for the flow level decorators are correctly set.
+    schedule_interval = flow._flow_decorators.get("airflow_schedule_interval")
+    schedule = flow._flow_decorators.get("schedule")
+    if schedule is not None and schedule_interval is not None:
+        raise AirflowException(
+            "Flow cannot have @schedule and @airflow_schedule_interval at the same time. Use any one."
+        )
     for node in graph:
         if node.type == "foreach":
             raise NotSupportedException(
@@ -73,7 +80,7 @@ def make_flow(
     set_active=False,
 ):
     # Validate if the workflow is correctly parsed.
-    _validate_workflow(obj.graph, obj.flow_datastore, obj.metadata)
+    _validate_workflow(obj.flow, obj.graph, obj.flow_datastore, obj.metadata)
     # Attach K8s decorator over here.
     # todo This will be affected in the future based on how many compute providers are supported on Airflow.
     decorators._attach_decorators(obj.flow, [KubernetesDecorator.name])

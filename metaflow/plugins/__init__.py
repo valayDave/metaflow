@@ -157,12 +157,14 @@ from .airflow.airflow_decorator import (
     S3KeySensorDecorator,
     SQLSensorDecorator,
     ExternalTaskSensorDecorator,
+    AirflowScheduleIntervalDecorator,
 )
 
 FLOW_DECORATORS = [CondaFlowDecorator, ScheduleDecorator, ProjectDecorator] + [
     S3KeySensorDecorator,
     SQLSensorDecorator,
     ExternalTaskSensorDecorator,
+    AirflowScheduleIntervalDecorator,
 ]
 _merge_lists(FLOW_DECORATORS, _ext_plugins["FLOW_DECORATORS"], "name")
 

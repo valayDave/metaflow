@@ -203,7 +203,14 @@ class Airflow(object):
         self.description = description
         self.start_date = start_date
         self.catchup = catchup
-        self.schedule_interval = self._get_schedule()
+
+        _schd, _sint = self._get_schedule(), self._get_airflow_schedule_interval()
+        self.schedule_interval = None
+        if _schd is not None:
+            self.schedule_interval = _schd
+        elif _sint is not None:
+            self.schedule_interval = _sint
+
         self._file_path = file_path
         self.metaflow_parameters = None
         _, self.graph_structure = self.graph.output_steps()
@@ -225,6 +232,12 @@ class Airflow(object):
         elif schedule.attributes["daily"]:
             return "@daily"
         return None
+
+    def _get_airflow_schedule_interval(self):
+        schedule_interval = self.flow._flow_decorators.get("airflow_schedule_interval")
+        if schedule_interval is None:
+            return None
+        return schedule_interval.schedule
 
     def _k8s_job(self, node, input_paths, env):
         # since we are attaching k8s at cli, there will be one for a step.

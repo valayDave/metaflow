@@ -72,6 +72,27 @@ def _arg_exception(arg_name, deconame, value, allowed_values=None, allowed_type=
     return _get_sensor_exception()(msg_str)
 
 
+class AirflowScheduleIntervalDecorator(FlowDecorator):
+    name = "airflow_schedule_interval"
+    defaults = {"cron": None, "weekly": False, "daily": True, "hourly": False}
+
+    def flow_init(
+        self, flow, graph, environment, flow_datastore, metadata, logger, echo, options
+    ):
+        # Currently supports quartz cron expressions in UTC as defined in
+        # https://docs.aws.amazon.com/eventbridge/latest/userguide/scheduled-events.html#cron-expressions
+        if self.attributes["cron"]:
+            self.schedule = self.attributes["cron"]
+        elif self.attributes["weekly"]:
+            self.schedule = "@weekly"
+        elif self.attributes["hourly"]:
+            self.schedule = "@hourly"
+        elif self.attributes["daily"]:
+            self.schedule = "@daily"
+        else:
+            self.schedule = None
+
+
 class AirflowSensorDecorator(FlowDecorator):
     """
     Base class for all Airflow sensor decorators.
@@ -94,7 +115,7 @@ class AirflowSensorDecorator(FlowDecorator):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._task_name = self.__class__.__name__
+        self._task_name = self.operator_type
 
     def serialize_operator_args(self):
         """
@@ -133,7 +154,7 @@ class AirflowSensorDecorator(FlowDecorator):
             if d.__class__.__name__ not in sensor_deco_types:
                 sensor_deco_types[d.__class__.__name__] = []
             sensor_deco_types[d.__class__.__name__].append(d)
-        # If there are more than one deco per sensor-type then we require the name argument.
+        # If there are more than one decorator per sensor-type then we require the name argument.
         if sum([len(v) for v in sensor_deco_types.values()]) > len(sensor_deco_types):
             if self.attributes["name"] is None:
                 raise _get_sensor_exception()(
@@ -221,7 +242,7 @@ class S3KeySensorDecorator(AirflowSensorDecorator):
     # https://airflow.apache.org/docs/apache-airflow-providers-amazon/stable/_api/airflow/providers/amazon/aws/sensors/s3/index.html#airflow.providers.amazon.aws.sensors.s3.S3KeySensor
     defaults = dict(
         **AirflowSensorDecorator.defaults,
-        bucket_key=None,
+        bucket_key=None,  # Required
         bucket_name=None,
         wildcard_match=False,
         aws_conn_id=None,
@@ -232,8 +253,6 @@ class S3KeySensorDecorator(AirflowSensorDecorator):
     def compile(self):
         if self.attributes["bucket_key"] is None:
             raise _arg_exception("bucket_key", self.name, None)
-        if self.attributes["aws_conn_id"] is None:
-            raise _arg_exception("aws_conn_id", self.name, None)
         super().compile()
 
 
