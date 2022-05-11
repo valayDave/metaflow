@@ -89,10 +89,13 @@ class AirflowScheduleIntervalDecorator(FlowDecorator):
     def flow_init(
         self, flow, graph, environment, flow_datastore, metadata, logger, echo, options
     ):
-        self._options = options
+        self._option_values = options
+        
         # Currently supports quartz cron expressions in UTC as defined in
         # https://docs.aws.amazon.com/eventbridge/latest/userguide/scheduled-events.html#cron-expressions
-        if self.attributes["cron"]:
+        if self._option_values["schedule"]:
+            self.schedule = self._option_values["schedule"]
+        elif self.attributes["cron"]:
             self.schedule = self.attributes["cron"]
         elif self.attributes["weekly"]:
             self.schedule = "@weekly"
@@ -104,7 +107,7 @@ class AirflowScheduleIntervalDecorator(FlowDecorator):
             self.schedule = None
 
     def get_top_level_options(self):
-        return list(self._option_values.items())
+        return list(dict(schedule=self.schedule).items())
 
 
 class AirflowSensorDecorator(FlowDecorator):
