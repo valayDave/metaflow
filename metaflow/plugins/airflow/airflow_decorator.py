@@ -90,9 +90,7 @@ class AirflowScheduleIntervalDecorator(FlowDecorator):
         self, flow, graph, environment, flow_datastore, metadata, logger, echo, options
     ):
         self._option_values = options
-        
-        # Currently supports quartz cron expressions in UTC as defined in
-        # https://docs.aws.amazon.com/eventbridge/latest/userguide/scheduled-events.html#cron-expressions
+
         if self._option_values["schedule"]:
             self.schedule = self._option_values["schedule"]
         elif self.attributes["cron"]:
