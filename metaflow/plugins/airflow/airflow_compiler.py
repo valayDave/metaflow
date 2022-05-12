@@ -30,6 +30,7 @@ from metaflow.util import dict_to_cli_options, get_username
 from . import airflow_utils as af_utils
 from .airflow_utils import (
     AIRFLOW_TASK_ID_TEMPLATE_VALUE,
+    PARENT_TASK_INSTANCE_STATUS_MACRO,
     RUN_ID_LEN,
     TASK_ID_XCOM_KEY,
     AirflowTask,
@@ -203,6 +204,7 @@ class Airflow(object):
         self.description = description
         self.start_date = start_date
         self.catchup = catchup
+        self._depends_on_upstream_sensors = False
 
         _schd, _sint = self._get_schedule(), self._get_airflow_schedule_interval()
         self.schedule_interval = None
@@ -420,6 +422,8 @@ class Airflow(object):
             # Initialize parameters for the flow in the `start` step.
             # `start` step has no upstream input dependencies aside from
             # parameters.
+            if self._depends_on_upstream_sensors:
+                env["METAFLOW_UPSTREAM_SENSORS"] = PARENT_TASK_INSTANCE_STATUS_MACRO
             parameters = self._process_parameters()
             if parameters:
                 env["METAFLOW_PARAMETERS"] = self.parameter_macro
@@ -580,7 +584,10 @@ class Airflow(object):
             for s in SUPPORTED_SENSORS
             if self.flow._flow_decorators.get(s) is not None
         ]
-        return [deco.create_task() for decos in decos_lists for deco in decos]
+        af_tasks = [deco.create_task() for decos in decos_lists for deco in decos]
+        if len(af_tasks) > 0:
+            self._depends_on_upstream_sensors = True
+        return af_tasks
 
     def compile(self):
 
