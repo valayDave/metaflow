@@ -325,6 +325,7 @@ class SQLSensorDecorator(AirflowSensorDecorator):
         sql=None,
         # success = None, # sucess/failure require callables. Wont be supported at start since not serialization friendly.
         # failure = None,
+        parameters=None,
         fail_on_empty=True,
         hook_params=None,
     )
