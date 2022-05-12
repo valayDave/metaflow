@@ -80,6 +80,10 @@ def json_dump(val):
     return json.dumps(val)
 
 
+def dash_connect(val):
+    return "-".join(val)
+
+
 class SensorMetaExtractor:
     """
     Extracts the metadata about the upstream sensors that are triggering the DAG.
@@ -235,6 +239,7 @@ class AirflowDAGArgs(object):
             task_id_creator=lambda v: task_id_creator(v),
             json_dump=lambda val: json_dump(val),
             get_parent_task_ids=lambda val: get_parent_task_ids(val),
+            dash_connect=lambda val: dash_connect(val),
         ),
     }
 
@@ -314,7 +319,7 @@ def set_k8s_operator_args(flow_name, step_name, operator_args):
     from airflow.kubernetes.secret import Secret
 
     task_id = AIRFLOW_TASK_ID_TEMPLATE_VALUE
-    run_id = "arf-{{ run_id | hash }}"  # hash is added via the `user_defined_filters`
+    run_id = "arf-{{ [run_id, dag_run.dag_id] | dash_connect | hash }}"  # hash is added via the `user_defined_filters`
     attempt = "{{ task_instance.try_number - 1 }}"
     # Set dynamic env variables like run-id, task-id etc from here.
     env_vars = (
