@@ -129,16 +129,27 @@ class SensorMetaExtractor:
     def _get_metadata(self, task_instance, airflow_operator, dag_run):
         metadata = []
         if task_instance.operator == "ExternalTaskSensor":
-            metadata.append(
-                self._make_metadata(
-                    "upstream-triggering-run-ids",
-                    ", ".join(
-                        self.external_task_sensor_run_ids(
-                            task_instance, airflow_operator, dag_run.logical_date
-                        )
+            metadata.extend(
+                [
+                    self._make_metadata(
+                        "upstream-triggering-run-ids",
+                        ", ".join(
+                            self.external_task_sensor_run_ids(
+                                task_instance, airflow_operator, dag_run.logical_date
+                            )
+                        ),
+                    ),
+                    self._make_metadata(
+                        "upstream-dag-id", airflow_operator.external_dag_id
+                    ),
+                ]
+            )
+            if airflow_operator.external_task_id is not None:
+                metadata.append(
+                    self._make_metadata(
+                        "upstream-task-id", str(airflow_operator.external_task_ids)
                     ),
                 )
-            )
         elif task_instance.operator == "S3KeySensor":
             airflow_operator._resolve_bucket_and_key()
             metadata.extend(
