@@ -327,7 +327,6 @@ class SQLSensorDecorator(AirflowSensorDecorator):
         # failure = None,
         parameters=None,
         fail_on_empty=True,
-        hook_params=None,
     )
 
     def compile(self):
