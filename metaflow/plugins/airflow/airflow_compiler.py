@@ -419,11 +419,10 @@ class Airflow(object):
         # The Below If/Else Block handle "Input Paths".
         # Input Paths help manage dataflow across the graph.
         if node.name == "start":
+            # todo : pass metadata for sensors using `airflow_utils.PARENT_TASK_INSTANCE_STATUS_MACRO`
             # Initialize parameters for the flow in the `start` step.
             # `start` step has no upstream input dependencies aside from
             # parameters.
-            if self._depends_on_upstream_sensors:
-                env["METAFLOW_UPSTREAM_SENSORS"] = PARENT_TASK_INSTANCE_STATUS_MACRO
             parameters = self._process_parameters()
             if parameters:
                 env["METAFLOW_PARAMETERS"] = self.parameter_macro

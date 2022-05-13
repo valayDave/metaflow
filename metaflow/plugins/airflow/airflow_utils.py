@@ -84,6 +84,11 @@ def dash_connect(val):
     return "-".join(val)
 
 
+###=============================SENSOR-METADATA-EXTRACTION===================
+# This code helps extract metadata about what happened with sensors.
+# It is not being used at the moment but can be very easily in the future.
+# Just set `PARENT_TASK_INSTANCE_STATUS_MACRO` to some environment variable
+# it will create a json dictionary at task runtime.
 class SensorMetaExtractor:
     """
     Extracts the metadata about the upstream sensors that are triggering the DAG.
@@ -175,11 +180,11 @@ class SensorMetaExtractor:
 
 
 PARENT_TASK_INSTANCE_STATUS_MACRO = (
-    "{{ [task.upstream_task_ids, dag_run] | get_parent_task_ids }}"
+    "{{ [task.upstream_task_ids, dag_run] | get_sensor_metadata }}"
 )
 
 
-def get_parent_task_ids(args):
+def get_sensor_metadata(args):
     """
     This function will be a user defined macro that retrieve the task-instances for a task-id
     and figure its status so that we can pass it down to the airflow decorators and store it as metadata.
@@ -200,6 +205,7 @@ def get_parent_task_ids(args):
     return json.dumps(data)
 
 
+###========================================================================
 class AirflowDAGArgs(object):
     # _arg_types This object helps map types of
     # different keys that need to be parsed. None of the "values" in this
@@ -238,7 +244,7 @@ class AirflowDAGArgs(object):
             hash=lambda my_value: hasher(my_value),
             task_id_creator=lambda v: task_id_creator(v),
             json_dump=lambda val: json_dump(val),
-            get_parent_task_ids=lambda val: get_parent_task_ids(val),
+            get_sensor_metadata=lambda val: get_sensor_metadata(val),
             dash_connect=lambda val: dash_connect(val),
         ),
     }

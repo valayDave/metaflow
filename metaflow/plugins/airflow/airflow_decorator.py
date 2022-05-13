@@ -128,48 +128,6 @@ class AirflowSensorDecorator(FlowDecorator):
 
     operator_type = None
 
-    _ran_once = False
-
-    @classmethod
-    def _init_meta_tags(cls, metadata):
-        if cls._ran_once:
-            return None
-        sensor_args = os.environ.get("METAFLOW_UPSTREAM_SENSORS", None)
-        # We set METAFLOW_UPSTREAM_SENSORS to the start step.
-        # this is json loaded and parsed. The value consists of a JSON list that
-        # has objects with keys 'task_id','state','operator_type',task_metadata'
-        # the "task_metadata" key holds custom metadata set by the `SensorMetaExtractor`.
-        tags = []
-        if sensor_args is not None:
-            detected_sensors = json.loads(sensor_args)
-            for idx, sensor in enumerate(detected_sensors):
-                sensormd = [
-                    dict(
-                        field="airflow-sensor-status:%s" % sensor["task_id"],
-                        value=sensor["state"],
-                    ),
-                    dict(
-                        field="airflow-sensor-type:%s" % sensor["task_id"],
-                        value=sensor["operator_type"],
-                    ),
-                    dict(
-                        field="airflow-sensor-type",
-                        value=sensor["operator_type"],
-                    ),
-                ]
-                for md in sensor["task_metadata"]:
-                    sensormd.append(
-                        dict(
-                            field="airflow-sensor-%s:%s"
-                            % (md["name"], sensor["task_id"]),
-                            value=md["value"],
-                        )
-                    )
-                for s in sensormd:
-                    tags.append("%s:%s" % (s["field"], s["value"]))
-            metadata.add_sticky_tags(sys_tags=tags)
-            cls._ran_once = True
-
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._task_name = self.operator_type
@@ -224,7 +182,6 @@ class AirflowSensorDecorator(FlowDecorator):
         self, flow, graph, environment, flow_datastore, metadata, logger, echo, options
     ):
         self.compile()
-        self._init_meta_tags(metadata)
 
 
 class ExternalTaskSensorDecorator(AirflowSensorDecorator):
