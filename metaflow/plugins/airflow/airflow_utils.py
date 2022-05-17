@@ -13,6 +13,10 @@ class KubernetesProviderNotFound(Exception):
     headline = "Kubernetes provider not found"
 
 
+class AirflowSensorNotFound(Exception):
+    headline = "Sensor package not found"
+
+
 LABEL_VALUE_REGEX = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-\_\.]{0,61}[a-zA-Z0-9])?$")
 
 TASK_ID_XCOM_KEY = "metaflow_task_id"
@@ -27,7 +31,19 @@ TASK_ID_LEN = 8
 # we can rename steps in a foreach with indexes (eg. `stepname-$index`) to create those steps.
 # Hence : Foreachs will require some special form of plumbing.
 # https://stackoverflow.com/questions/62962386/can-an-airflow-task-dynamically-generate-a-dag-at-runtime
-AIRFLOW_TASK_ID_TEMPLATE_VALUE = "arf-{{ [run_id, ti.task_id ] | task_id_creator  }}"
+AIRFLOW_TASK_ID_TEMPLATE_VALUE = (
+    "arf-{{ [run_id, ti.task_id, dag_run.dag_id ] | task_id_creator  }}"
+)
+
+
+class SensorNames:
+    EXTERNAL_TASK_SENSOR = "ExternalTaskSensor"
+    SQL_SENSOR = "SQLSensor"
+    S3_SENSOR = "S3KeySensor"
+
+    @classmethod
+    def get_supported_sensors(cls):
+        return list(cls.__dict__.values())
 
 
 def sanitize_label_value(val):
@@ -64,6 +80,132 @@ def json_dump(val):
     return json.dumps(val)
 
 
+def dash_connect(val):
+    return "-".join(val)
+
+
+###=============================SENSOR-METADATA-EXTRACTION===================
+# This code helps extract metadata about what happened with sensors.
+# It is not being used at the moment but can be very easily in the future.
+# Just set `PARENT_TASK_INSTANCE_STATUS_MACRO` to some environment variable
+# it will create a json dictionary at task runtime.
+class SensorMetaExtractor:
+    """
+    Extracts the metadata about the upstream sensors that are triggering the DAG.
+    Stores different metadata information based on different sensor type.
+    """
+
+    def __init__(self, task_instance, airflow_operator, dag_run):
+        self._data = dict(
+            task_id=airflow_operator.task_id,
+            state=task_instance.state,
+            operator_type=task_instance.operator,
+            task_metadata=self._get_metadata(task_instance, airflow_operator, dag_run),
+        )
+
+    @staticmethod
+    def external_task_sensor_run_ids(task_instance, airflow_operator, logical_date):
+        def resolve_run_ids(airflow_operator, dates):
+            from airflow.models import DagRun
+
+            DR = DagRun
+            vals = []
+            for d in dates:
+                run_id = DR.find(
+                    dag_id=airflow_operator.external_dag_id, execution_date=d
+                )[0].run_id
+                vals.append(run_id)
+            return vals
+
+        # ----THIS CODE BLOCK USES LOGIC GIVEN IN EXTERNAL TASK SENSOR-----
+        if airflow_operator.execution_delta:
+            dttm = logical_date - airflow_operator.execution_delta
+        elif airflow_operator.execution_date_fn:
+            # `task_instance.get_template_context` : https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/models/taskinstance/index.html#airflow.models.taskinstance.TaskInstance.get_template_context
+            dttm = airflow_operator._handle_execution_date_fn(
+                context=task_instance.get_template_context()
+            )
+        else:
+            dttm = logical_date
+        dttm_filter = dttm if isinstance(dttm, list) else [dttm]
+        # ------------------------------------------------------------
+        resolvd_run_ids = resolve_run_ids(airflow_operator, dttm_filter)
+        return resolvd_run_ids
+
+    def _make_metadata(self, name, value):
+        return dict(name=name, value=value)
+
+    def _get_metadata(self, task_instance, airflow_operator, dag_run):
+        metadata = []
+        if task_instance.operator == "ExternalTaskSensor":
+            metadata.extend(
+                [
+                    self._make_metadata(
+                        "upstream-triggering-run-ids",
+                        ", ".join(
+                            self.external_task_sensor_run_ids(
+                                task_instance, airflow_operator, dag_run.logical_date
+                            )
+                        ),
+                    ),
+                    self._make_metadata(
+                        "upstream-dag-id", airflow_operator.external_dag_id
+                    ),
+                ]
+            )
+            if airflow_operator.external_task_id is not None:
+                metadata.append(
+                    self._make_metadata(
+                        "upstream-task-id", str(airflow_operator.external_task_ids)
+                    ),
+                )
+        elif task_instance.operator == "S3KeySensor":
+            airflow_operator._resolve_bucket_and_key()
+            metadata.extend(
+                [
+                    self._make_metadata("s3-key", airflow_operator.bucket_key),
+                    self._make_metadata("s3-bucket-name", airflow_operator.bucket_name),
+                ]
+            )
+        elif task_instance.operator == "SqlSensor":
+            # todo : Should we store sql statement in the metadata ?
+            # Storing SQL can raise security concerns and it would also require care when JSON.
+            metadata.append(
+                self._make_metadata("sql-conn-id", airflow_operator.conn_id)
+            )
+        return metadata
+
+    def get_data(self):
+        return self._data
+
+
+PARENT_TASK_INSTANCE_STATUS_MACRO = (
+    "{{ [task.upstream_task_ids, dag_run] | get_sensor_metadata }}"
+)
+
+
+def get_sensor_metadata(args):
+    """
+    This function will be a user defined macro that retrieve the task-instances for a task-id
+    and figure its status so that we can pass it down to the airflow decorators and store it as metadata.
+
+    It is used via the `PARENT_TASK_INSTANCE_STATUS_MACRO` to store this JSON dumped information in a environment variable.
+    """
+
+    task_ids, dag_run = args
+    data = []
+    dag = dag_run.get_dag()
+    for tid in task_ids:
+        # `task_instance` is of the form https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/models/taskinstance/index.html#airflow.models.taskinstance.TaskInstance
+        task_instance = dag_run.get_task_instance(tid)
+        operator_object = dag.get_task(tid)
+        data.append(
+            SensorMetaExtractor(task_instance, operator_object, dag_run).get_data()
+        )
+    return json.dumps(data)
+
+
+###========================================================================
 class AirflowDAGArgs(object):
     # _arg_types This object helps map types of
     # different keys that need to be parsed. None of the "values" in this
@@ -102,6 +244,8 @@ class AirflowDAGArgs(object):
             hash=lambda my_value: hasher(my_value),
             task_id_creator=lambda v: task_id_creator(v),
             json_dump=lambda val: json_dump(val),
+            get_sensor_metadata=lambda val: get_sensor_metadata(val),
+            dash_connect=lambda val: dash_connect(val),
         ),
     }
 
@@ -181,7 +325,7 @@ def set_k8s_operator_args(flow_name, step_name, operator_args):
     from airflow.kubernetes.secret import Secret
 
     task_id = AIRFLOW_TASK_ID_TEMPLATE_VALUE
-    run_id = "arf-{{ run_id | hash }}"  # hash is added via the `user_defined_filters`
+    run_id = "arf-{{ [run_id, dag_run.dag_id] | dash_connect | hash }}"  # hash is added via the `user_defined_filters`
     attempt = "{{ task_instance.try_number - 1 }}"
     # Set dynamic env variables like run-id, task-id etc from here.
     env_vars = (
@@ -298,12 +442,50 @@ def get_k8s_operator():
             )
         except ImportError as e:
             raise KubernetesProviderNotFound(
-                "Running this DAG requires a `KubernetesPodOperator`. "
+                "This DAG requires a `KubernetesPodOperator`. "
                 "Install the Airflow Kubernetes provider using : "
                 "`pip install apache-airflow-providers-cncf-kubernetes`"
             )
 
     return KubernetesPodOperator
+
+
+def _parse_sensor_args(name, kwargs):
+    if name == SensorNames.EXTERNAL_TASK_SENSOR:
+        if "execution_delta" in kwargs:
+            if type(kwargs["execution_delta"]) == dict:
+                kwargs["execution_delta"] = timedelta(**kwargs["execution_delta"])
+            else:
+                del kwargs["execution_delta"]
+    return kwargs
+
+
+def _get_sensor(name):
+    if name == SensorNames.EXTERNAL_TASK_SENSOR:
+        # ExternalTaskSensors uses an execution_date of a dag to
+        # determine the appropriate DAG.
+        # This is set to the exact date the current dag gets executed on.
+        # For example if "DagA" (Upstream DAG) got scheduled at
+        # 12 Jan 4:00 PM PDT then "DagB"(current DAG)'s task sensor will try to
+        # look for a "DagA" that got executed at 12 Jan 4:00 PM PDT **exactly**.
+        # They also support a `execution_timeout` argument to
+        from airflow.sensors.external_task_sensor import ExternalTaskSensor
+
+        return ExternalTaskSensor
+    elif name == SensorNames.S3_SENSOR:
+        try:
+            from airflow.providers.amazon.aws.sensors.s3 import S3KeySensor
+        except ImportError:
+            raise AirflowSensorNotFound(
+                "This DAG requires a `S3KeySensor`. "
+                "Install the Airflow AWS provider using : "
+                "`pip install apache-airflow-providers-amazon`"
+            )
+        return S3KeySensor
+    elif name == SensorNames.SQL_SENSOR:
+        from airflow.sensors.sql import SqlSensor
+
+        return SqlSensor
 
 
 class AirflowTask(object):
@@ -316,6 +498,13 @@ class AirflowTask(object):
     def set_operator_args(self, **kwargs):
         self._operator_args = kwargs
         return self
+
+    def _make_sensor(self):
+        TaskSensor = _get_sensor(self._operator_type)
+        return TaskSensor(
+            task_id=self.name,
+            **_parse_sensor_args(self._operator_type, self._operator_args)
+        )
 
     def to_dict(self):
         return {
@@ -345,6 +534,8 @@ class AirflowTask(object):
     def to_task(self):
         if self._operator_type == "kubernetes":
             return self._kubenetes_task()
+        elif self._operator_type in SensorNames.get_supported_sensors():
+            return self._make_sensor()
 
 
 class Workflow(object):

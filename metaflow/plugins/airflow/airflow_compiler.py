@@ -30,11 +30,13 @@ from metaflow.util import dict_to_cli_options, get_username
 from . import airflow_utils as af_utils
 from .airflow_utils import (
     AIRFLOW_TASK_ID_TEMPLATE_VALUE,
+    PARENT_TASK_INSTANCE_STATUS_MACRO,
     RUN_ID_LEN,
     TASK_ID_XCOM_KEY,
     AirflowTask,
     Workflow,
 )
+from .airflow_decorator import AirflowSensorDecorator, SUPPORTED_SENSORS
 
 AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "af_deploy.py")
 
@@ -153,7 +155,7 @@ class Airflow(object):
     # Airflow run_ids are of the form : "manual__2022-03-15T01:26:41.186781+00:00"
     # Such run-ids break the `metaflow.util.decompress_list`; this is why we hash the runid
     run_id = (
-        "%s-$(echo -n {{ run_id }} | md5sum | awk '{print $1}' | awk '{print substr ($0, 0, %s)}')"
+        "%s-$(echo -n {{ run_id }}-{{ dag_run.dag_id }} | md5sum | awk '{print $1}' | awk '{print substr ($0, 0, %s)}')"
         % (AIRFLOW_PREFIX, str(RUN_ID_LEN))
     )
     # We do echo -n because emits line breaks and we dont want to consider that since it we want same hash value when retrieved in python.
@@ -202,7 +204,15 @@ class Airflow(object):
         self.description = description
         self.start_date = start_date
         self.catchup = catchup
-        self.schedule_interval = self._get_schedule()
+        self._depends_on_upstream_sensors = False
+
+        _schd, _sint = self._get_schedule(), self._get_airflow_schedule_interval()
+        self.schedule_interval = None
+        if _schd is not None:
+            self.schedule_interval = _schd
+        elif _sint is not None:
+            self.schedule_interval = _sint
+
         self._file_path = file_path
         self.metaflow_parameters = None
         _, self.graph_structure = self.graph.output_steps()
@@ -224,6 +234,12 @@ class Airflow(object):
         elif schedule.attributes["daily"]:
             return "@daily"
         return None
+
+    def _get_airflow_schedule_interval(self):
+        schedule_interval = self.flow._flow_decorators.get("airflow_schedule_interval")
+        if schedule_interval is None:
+            return None
+        return schedule_interval.schedule
 
     def _k8s_job(self, node, input_paths, env):
         # since we are attaching k8s at cli, there will be one for a step.
@@ -403,6 +419,7 @@ class Airflow(object):
         # The Below If/Else Block handle "Input Paths".
         # Input Paths help manage dataflow across the graph.
         if node.name == "start":
+            # todo : pass metadata for sensors using `airflow_utils.PARENT_TASK_INSTANCE_STATUS_MACRO`
             # Initialize parameters for the flow in the `start` step.
             # `start` step has no upstream input dependencies aside from
             # parameters.
@@ -560,6 +577,17 @@ class Airflow(object):
         cmds.append(" ".join(entrypoint + top_level + step))
         return cmds
 
+    def _collect_flow_sensors(self):
+        decos_lists = [
+            self.flow._flow_decorators.get(s)
+            for s in SUPPORTED_SENSORS
+            if self.flow._flow_decorators.get(s) is not None
+        ]
+        af_tasks = [deco.create_task() for decos in decos_lists for deco in decos]
+        if len(af_tasks) > 0:
+            self._depends_on_upstream_sensors = True
+        return af_tasks
+
     def compile(self):
 
         # Visit every node of the flow and recursively build the state machine.
@@ -608,6 +636,8 @@ class Airflow(object):
         )
         if self.set_active:
             other_args["is_paused_upon_creation"] = False
+
+        appending_sensors = self._collect_flow_sensors()
         workflow = Workflow(
             dag_id=self.name,
             default_args=self._create_defaults(),
@@ -622,6 +652,10 @@ class Airflow(object):
         )
         workflow = _visit(self.graph["start"], workflow)
         workflow.set_parameters(self.metaflow_parameters)
+        if len(appending_sensors) > 0:
+            for s in appending_sensors:
+                workflow.add_state(s)
+            workflow.graph_structure.insert(0, [[s.name] for s in appending_sensors])
         return self._create_airflow_file(workflow.to_dict())
 
     def _create_airflow_file(self, json_dag):
