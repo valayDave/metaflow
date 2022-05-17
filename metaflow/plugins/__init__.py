@@ -153,7 +153,19 @@ from .conda.conda_flow_decorator import CondaFlowDecorator
 from .aws.step_functions.schedule_decorator import ScheduleDecorator
 from .project_decorator import ProjectDecorator
 
-FLOW_DECORATORS = [CondaFlowDecorator, ScheduleDecorator, ProjectDecorator]
+from .airflow.airflow_decorator import (
+    S3KeySensorDecorator,
+    SQLSensorDecorator,
+    ExternalTaskSensorDecorator,
+    AirflowScheduleIntervalDecorator,
+)
+
+FLOW_DECORATORS = [CondaFlowDecorator, ScheduleDecorator, ProjectDecorator] + [
+    S3KeySensorDecorator,
+    SQLSensorDecorator,
+    ExternalTaskSensorDecorator,
+    AirflowScheduleIntervalDecorator,
+]
 _merge_lists(FLOW_DECORATORS, _ext_plugins["FLOW_DECORATORS"], "name")
 
 # Cards
