@@ -101,7 +101,6 @@ class Airflow(object):
         self.parameters = None
         _, self.graph_structure = self.graph.output_steps()
         self.worker_pool = worker_pool
-        # replace with `is_paused_upon_creation`
         self.is_paused_upon_creation = is_paused_upon_creation
         self._set_scheduling_interval()
 
@@ -575,21 +574,15 @@ class Airflow(object):
                 ),
             )
 
-    # Not sure what is happening here. This can simply be the listed defaults in
-    # the DAG template.
     def _create_defaults(self):
         defu_ = {
             "owner": get_username(),
             # If set on a task, doesn’t run the task in the current DAG run if the previous run of the task has failed.
             "depends_on_past": False,
             # TODO: Enable emails
-            "email": [],
-            "email_on_failure": False,
-            "email_on_retry": False,
             "retries": 0,
             "execution_timeout": timedelta(days=5),
             # check https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/models/baseoperator/index.html?highlight=retry_delay#airflow.models.baseoperator.BaseOperatorMeta
-            "retry_delay": timedelta(seconds=5),
         }
         if self.worker_pool is not None:
             defu_["pool"] = self.worker_pool
