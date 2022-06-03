@@ -11,8 +11,9 @@ from .airflow_utils import TASK_ID_XCOM_KEY, AirflowTask, SensorNames
 K8S_XCOM_DIR_PATH = "/airflow/xcom"
 
 
-# there are 6 decorators in this class right now - making it difficult to parse
-# the file. can we split this out with every decorator getting it's own file?
+# # TODO : (savin-comments)  : 
+    # there are 6 decorators in this class right now - making it difficult to parse
+    # the file. can we split this out with every decorator getting it's own file?
 
 def safe_mkdir(dir):
     try:
@@ -39,7 +40,7 @@ AIRFLOW_STATES = dict(
     SKIPPED="skipped",
 )
 
-# is there a reason for this method to exist in it's current form?
+# TODO : (savin-comments) : fix this is there a reason for this method to exist in it's current form?
 def _get_sensor_exception():
     from .airflow import AirflowException
 
@@ -49,6 +50,7 @@ def _get_sensor_exception():
     return AirflowSensorException
 
 
+# # TODO : (savin-comments) : refactor this to a common place. 
 def _arg_exception(arg_name, deconame, value, allowed_values=None, allowed_type=None):
     msg_str = "`%s` cannot be `%s` when using @%s" % (
         arg_name,
@@ -131,6 +133,7 @@ class AirflowSensorDecorator(FlowDecorator):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # TODO : (savin-comments) : refactor the name of `self._task_name` to have a common name.
         # Is the task is task name a metaflow task?
         self._task_name = self.operator_type
 
@@ -174,7 +177,7 @@ class AirflowSensorDecorator(FlowDecorator):
         # If there are more than one decorator per sensor-type then we require the name argument.
         if sum([len(v) for v in sensor_deco_types.values()]) > len(sensor_deco_types):
             if self.attributes["name"] is None:
-                # can't we autogenerate this name?
+                # TODO : (savin-comments)  autogenerate this name
                 raise _get_sensor_exception()(
                     "`name` argument cannot be `None` when multiple Airflow Sensor related decorators are attached to a flow."
                 )

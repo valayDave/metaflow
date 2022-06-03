@@ -47,7 +47,7 @@ class SensorNames:
         return list(cls.__dict__.values())
 
 
-# TODO: This can be removed. See how labels/annotations are handled in Metaflow today.
+# TODO : (savin-comments)  This can be removed. See how labels/annotations are handled in Metaflow today.
 def sanitize_label_value(val):
     # Label sanitization: if the value can be used as is, return it as is.
     # If it can't, sanitize and add a suffix based on hash of the original
@@ -83,6 +83,7 @@ def json_dump(val):
     return json.dumps(val)
 
 
+# TODO : (savin-comments) Fix serialization of args : 
 class AirflowDAGArgs(object):
     # _arg_types This object helps map types of
     # different keys that need to be parsed. None of the "values" in this
@@ -182,7 +183,7 @@ class AirflowDAGArgs(object):
         dd = self._serialize_args()
         return dd
 
-# TODO: This shouldn't be strictly needed?
+# TODO : (savin-comments) This shouldn't be strictly needed?
 def generate_rfc1123_name(flow_name, step_name):
     """
     Generate RFC 1123 compatible name. Specifically, the format is:
@@ -215,7 +216,7 @@ def _kubernetes_pod_operator_args(flow_name, step_name, operator_args):
     ]
     args = operator_args
     args.update({
-        # todo : we should be able to have a cleaner name - take a look at the argo implementation
+        # TODO : (savin-comments) : we should be able to have a cleaner name - take a look at the argo implementation
         "name": generate_rfc1123_name(flow_name, step_name),
         "secrets": secrets,        
         # Question for (savin): 
