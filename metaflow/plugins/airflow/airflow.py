@@ -115,12 +115,12 @@ class Airflow(object):
         This method will extract interval from both and apply the one which is not None. We raise an exception in the 
         airflow_cli.py if both flow decorators are set. 
         """
-        schedule_decorator_sint, airflow_schedule_decorator_sint = self._get_schedule(), self._get_airflow_schedule_interval()
+        schedule_decorator_cron_pattern, airflow_schedule_decorator_cron_pattern = self._get_schedule(), self._get_airflow_schedule_interval()
         self.schedule_interval = None
-        if schedule_decorator_sint is not None:
-            self.schedule_interval = schedule_decorator_sint
-        elif airflow_schedule_decorator_sint is not None:
-            self.schedule_interval = airflow_schedule_decorator_sint
+        if schedule_decorator_cron_pattern is not None:
+            self.schedule_interval = schedule_decorator_cron_pattern
+        elif airflow_schedule_decorator_cron_pattern is not None:
+            self.schedule_interval = airflow_schedule_decorator_cron_pattern
 
     def _get_schedule(self):
         # Using the cron presets provided here :
