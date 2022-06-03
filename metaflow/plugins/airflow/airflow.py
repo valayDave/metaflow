@@ -27,7 +27,7 @@ from metaflow.util import dict_to_cli_options, get_username
 from . import airflow_utils
 from .airflow_decorator import SUPPORTED_SENSORS, AirflowSensorDecorator
 from .airflow_utils import (AIRFLOW_TASK_ID_TEMPLATE_VALUE,
-                            PARENT_TASK_INSTANCE_STATUS_MACRO, RUN_ID_LEN,
+                            RUN_ID_LEN,
                             TASK_ID_XCOM_KEY, AirflowTask, Workflow)
 
 AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "dag.py")
@@ -423,7 +423,10 @@ class Airflow(object):
         # The Below If/Else Block handle "Input Paths".
         # Input Paths help manage dataflow across the graph.
         if node.name == "start":
-            # todo : pass metadata for sensors using `airflow_utils.PARENT_TASK_INSTANCE_STATUS_MACRO`
+            # POSSIBLE_FUTURE_IMPROVEMENT: 
+                # We can extract metadata about the possible upstream sensor triggers. 
+                # There is a previous commit (7bdf6) in the `airflow` branch that has `SensorMetaExtractor` class and 
+                # associated MACRO we have built to handle this case if a metadata regarding the sensor is needed. 
             # Initialize parameters for the flow in the `start` step.
             # `start` step has no upstream input dependencies aside from
             # parameters.
