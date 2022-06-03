@@ -361,7 +361,7 @@ class Airflow(object):
             "METAFLOW_DEFAULT_DATASTORE": "s3",
             "METAFLOW_DEFAULT_METADATA": "service",
             # Question for (savin) : what does `METAFLOW_KUBERNETES_WORKLOAD` do ? 
-            "METAFLOW_KUBERNETES_WORKLOAD": 1,
+            "METAFLOW_KUBERNETES_WORKLOAD": str(1),
             "METAFLOW_RUNTIME_ENVIRONMENT": "kubernetes",
             "METAFLOW_CARD_S3ROOT": DATASTORE_CARD_S3ROOT,
             "METAFLOW_RUN_ID":mf_run_id,
