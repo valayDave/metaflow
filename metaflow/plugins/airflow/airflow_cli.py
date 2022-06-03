@@ -1,28 +1,184 @@
-from metaflow._vendor import click
-from metaflow import decorators
-from metaflow.util import get_username
-from metaflow.package import MetaflowPackage
-from metaflow.plugins import KubernetesDecorator
-from .airflow_compiler import Airflow, AirflowException, NotSupportedException
-from metaflow import S3
-from metaflow import current
-from metaflow.exception import MetaflowException
-
 import re
+
+from metaflow import S3, current, decorators
+from metaflow._vendor import click
+from metaflow.exception import MetaflowException
+from metaflow.package import MetaflowPackage
+from metaflow.plugins import EnvironmentDecorator, KubernetesDecorator
+from metaflow.util import get_username
+
+from .airflow import Airflow, AirflowException, NotSupportedException
 
 VALID_NAME = re.compile("[^a-zA-Z0-9_\-\.]")
 
 
+@click.group()
+def cli():
+    pass
+
+
+@cli.group(help="Commands related to Airflow.")
+@click.option(
+    "--name",
+    default=None,
+    type=str,
+    help="Airflow DAG name. The flow name is used instead if this option is not "
+    "specified",
+)
+@click.pass_obj
+def airflow(obj, name=None):
+    obj.check(obj.graph, obj.flow, obj.environment, pylint=obj.pylint)
+    obj.dag_name = resolve_dag_name(obj, name)
+
+
+@airflow.command(help="Compile a new version of this workflow to Airflow DAG.")
+@click.argument("file", required=True)
+@click.option(
+    "--tag",
+    "tags",
+    multiple=True,
+    default=None,
+    help="Annotate all objects produced by Airflow DAG executions "
+    "with the given tag. You can specify this option multiple "
+    "times to attach multiple tags.",
+)
+@click.option(
+    "--is-paused-upon-creation",
+    default=False,
+    is_flag=True,
+    help="Generated Airflow DAG is paused/unpaused upon creation.",
+)
+@click.option(
+    "--namespace",
+    "user_namespace",
+    default=None,
+    # TODO (savin): Identify the default namespace?
+    help="Change the namespace from the default to the given tag. "
+    "See run --help for more information.",
+)
+@click.option(
+    "--max-workers",
+    default=100,
+    show_default=True,
+    help="Maximum number of parallel processes.",
+)
+# TODO: Enable workflow timeout.
+# @click.option(
+#     "--workflow-timeout",
+#     default=None,
+#     type=int,
+#     help="Workflow timeout in seconds. Enforced only for scheduled DAGs.",
+# )
+@click.option(
+    "--worker-pool",
+    default=None,
+    show_default=True,
+    help="Worker pool for Airflow DAG execution.",
+)
+@click.pass_obj
+def create(
+    obj,
+    file,
+    tags=None,
+    is_paused_upon_creation=False,
+    user_namespace=None,
+    max_workers=None,
+    workflow_timeout=None,
+    worker_pool=None,
+):
+    obj.echo("Compiling *%s* to Airflow DAG..." % obj.dag_name, bold=True)
+
+    flow = make_flow(
+        obj,
+        obj.dag_name,
+        tags,
+        is_paused_upon_creation,
+        user_namespace,
+        max_workers,
+        workflow_timeout,
+        worker_pool,
+        file,
+    )
+    with open(file, "w") as f:
+        f.write(flow.compile())
+
+    obj.echo(
+        "DAG *{dag_name}* "
+        "for flow *{name}* compiled to "
+        "Airflow successfully.\n".format(dag_name=obj.dag_name, name=current.flow_name),
+        bold=True,
+    )
+
+
+def make_flow(
+    obj,
+    dag_name,
+    tags,
+    is_paused_upon_creation,
+    namespace,
+    max_workers,
+    workflow_timeout,
+    worker_pool,
+    file,
+):
+    # Validate if the workflow is correctly parsed.
+    # _validate_workflow(obj.flow, obj.graph, obj.flow_datastore, obj.metadata)
+
+    # Attach @kubernetes and @environment decorator to the flow to
+    # ensure that the related decorator hooks are invoked.
+    decorators._attach_decorators(
+        obj.flow, [KubernetesDecorator.name, EnvironmentDecorator.name]
+    )
+
+    decorators._init_step_decorators(
+        obj.flow, obj.graph, obj.environment, obj.flow_datastore, obj.logger
+    )
+
+    # Save the code package in the flow datastore so that both user code and
+    # metaflow package can be retrieved during workflow execution.
+    obj.package = MetaflowPackage(
+        obj.flow, obj.environment, obj.echo, obj.package_suffixes
+    )
+    package_url, package_sha = obj.flow_datastore.save_data(
+        [obj.package.blob], len_hint=1
+    )[0]
+
+    return Airflow(
+        dag_name,
+        obj.graph,
+        obj.flow,
+        package_sha,
+        package_url,
+        obj.metadata,
+        obj.flow_datastore,
+        obj.environment,
+        obj.event_logger,
+        obj.monitor,
+        tags=tags,
+        namespace=namespace,
+        username=get_username(),
+        max_workers=max_workers,
+        worker_pool=worker_pool,
+        #workflow_timeout=workflow_timeout,
+        description=obj.flow.__doc__,
+        file_path=file,
+        is_paused_upon_creation=is_paused_upon_creation,
+    )
+
+
+# TODO: Clean this out
 def _validate_workflow(flow, graph, flow_datastore, metadata):
     # check for other compute related decorators.
     # supported compute : k8s (v1), local(v2), batch(v3),
     # todo : check for the flow level decorators are correctly set.
+    # TODO: Move the check to the decorator
     schedule_interval = flow._flow_decorators.get("airflow_schedule_interval")
     schedule = flow._flow_decorators.get("schedule")
     if schedule is not None and schedule_interval is not None:
         raise AirflowException(
             "Flow cannot have @schedule and @airflow_schedule_interval at the same time. Use any one."
         )
+    # This check can be handled by airflow.py
     for node in graph:
         if node.type == "foreach":
             raise NotSupportedException(
@@ -40,8 +196,7 @@ def _validate_workflow(flow, graph, flow_datastore, metadata):
         raise AirflowException('Datastore of type "s3" required with `airflow create`')
 
 
-def resolve_dag_name(name):
-
+def resolve_dag_name(obj, name):
     project = current.get("project_name")
     if project:
         if name:
@@ -52,134 +207,5 @@ def resolve_dag_name(name):
     else:
         if name and VALID_NAME.search(name):
             raise MetaflowException("Name '%s' contains invalid characters." % name)
-
         dag_name = name if name else current.flow_name
-
     return dag_name
-
-
-@click.group()
-def cli():
-    pass
-
-
-@cli.group(help="Commands related to Airflow.")
-@click.pass_context
-def airflow(ctx):
-    pass
-
-
-def make_flow(
-    obj,
-    dag_name,
-    tags,
-    namespace,
-    max_workers,
-    file_path=None,
-    worker_pool=None,
-    set_active=False,
-):
-    # Validate if the workflow is correctly parsed.
-    _validate_workflow(obj.flow, obj.graph, obj.flow_datastore, obj.metadata)
-    # Attach K8s decorator over here.
-    # todo This will be affected in the future based on how many compute providers are supported on Airflow.
-    decorators._attach_decorators(obj.flow, [KubernetesDecorator.name])
-    decorators._init_step_decorators(
-        obj.flow, obj.graph, obj.environment, obj.flow_datastore, obj.logger
-    )
-
-    obj.package = MetaflowPackage(
-        obj.flow, obj.environment, obj.echo, obj.package_suffixes
-    )
-    package_url, package_sha = obj.flow_datastore.save_data(
-        [obj.package.blob], len_hint=1
-    )[0]
-    flow_name = resolve_dag_name(dag_name)
-    return Airflow(
-        flow_name,
-        obj.graph,
-        obj.flow,
-        package_sha,
-        package_url,
-        obj.metadata,
-        obj.flow_datastore,
-        obj.environment,
-        obj.event_logger,
-        obj.monitor,
-        tags=tags,
-        namespace=namespace,
-        max_workers=max_workers,
-        worker_pool=worker_pool,
-        username=get_username(),
-        description=obj.flow.__doc__,
-        file_path=file_path,
-        set_active=set_active,
-    )
-
-
-@airflow.command(help="Create an airflow workflow from this metaflow workflow")
-@click.argument("file_path", required=True)
-@click.option(
-    "--tag",
-    "tags",
-    multiple=True,
-    default=None,
-    help="Annotate the DAG on Airflow and any of it's metaflow runs "
-    "with the given tag. You can specify this option multiple "
-    "times to attach multiple tags.",
-)
-@click.option(
-    "--name",
-    default=None,
-    type=str,
-    help="`dag_id` of airflow DAG. The flow name is used instead "
-    "if this option is not specified",
-)
-@click.option(
-    "--is-paused-upon-creation",
-    "is_paused",
-    default=False,
-    is_flag=True,
-    help="Sets `is_paused_upon_creation=True` for the Airflow DAG. ",
-)
-@click.option(
-    "--namespace",
-    "user_namespace",
-    default=None,
-)
-@click.option(
-    "--max-workers",
-    default=100,
-    show_default=True,
-    help="Maximum number of concurrent Airflow tasks.",
-)
-@click.option(
-    "--worker-pool",
-    default=None,
-    show_default=True,
-    help="Worker pool the for the airflow tasks.",
-)
-@click.pass_obj
-def create(
-    obj,
-    file_path,
-    tags=None,
-    name=None,
-    is_paused=False,
-    user_namespace=None,
-    max_workers=None,
-    worker_pool=None,
-):
-    flow = make_flow(
-        obj,
-        name,
-        tags,
-        user_namespace,
-        max_workers,
-        file_path=file_path,
-        worker_pool=worker_pool,
-        set_active=not is_paused,
-    )
-    compiled_dag_file = flow.compile()
-    with open(file_path, "w") as f:
-        f.write(compiled_dag_file)
