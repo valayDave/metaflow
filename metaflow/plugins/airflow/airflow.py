@@ -28,12 +28,13 @@ from . import airflow_utils
 from .airflow_decorator import SUPPORTED_SENSORS, AirflowSensorDecorator
 from .airflow_utils import (AIRFLOW_TASK_ID_TEMPLATE_VALUE,
                             RUN_ID_LEN,
+                            RUN_ID_PREFIX,
                             TASK_ID_XCOM_KEY, AirflowTask, Workflow)
 
 AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "dag.py")
 
 
-RUN_ID_PREFIX = "airflow"
+
 
 class AirflowException(MetaflowException):
     headline = "Airflow Exception"
