@@ -1,17 +1,18 @@
-from datetime import timedelta
-import os
 import json
+import os
 import time
+from datetime import timedelta
 
 from metaflow.decorators import FlowDecorator, StepDecorator
-
 from metaflow.metadata import MetaDatum
 
 from .airflow_utils import TASK_ID_XCOM_KEY, AirflowTask, SensorNames
 
-
 K8S_XCOM_DIR_PATH = "/airflow/xcom"
 
+
+# there are 6 decorators in this class right now - making it difficult to parse
+# the file. can we split this out with every decorator getting it's own file?
 
 def safe_mkdir(dir):
     try:
@@ -38,9 +39,9 @@ AIRFLOW_STATES = dict(
     SKIPPED="skipped",
 )
 
-
+# is there a reason for this method to exist in it's current form?
 def _get_sensor_exception():
-    from .airflow_compiler import AirflowException
+    from .airflow import AirflowException
 
     class AirflowSensorException(AirflowException):
         pass
@@ -130,6 +131,7 @@ class AirflowSensorDecorator(FlowDecorator):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Is the task is task name a metaflow task?
         self._task_name = self.operator_type
 
     def serialize_operator_args(self):
@@ -172,6 +174,7 @@ class AirflowSensorDecorator(FlowDecorator):
         # If there are more than one decorator per sensor-type then we require the name argument.
         if sum([len(v) for v in sensor_deco_types.values()]) > len(sensor_deco_types):
             if self.attributes["name"] is None:
+                # can't we autogenerate this name?
                 raise _get_sensor_exception()(
                     "`name` argument cannot be `None` when multiple Airflow Sensor related decorators are attached to a flow."
                 )
