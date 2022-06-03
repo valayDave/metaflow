@@ -392,14 +392,7 @@ class Airflow(object):
             ),
             execution_timeout=dict(seconds=runtime_limit),
             retries=user_code_retries,
-            env_vars=[dict(name=k, value=v) for k, v in env.items()] + [
-                # set some env variables via kubernetes
-                dict(name=k,value_from=dict(field_ref=dict(field_path=v)))for k, v in {
-                    "METAFLOW_KUBERNETES_POD_NAMESPACE": "metadata.namespace",
-                    "METAFLOW_KUBERNETES_POD_NAME": "metadata.name",
-                    "METAFLOW_KUBERNETES_POD_ID": "metadata.uid",
-                }.items()
-            ],
+            env_vars=[dict(name=k, value=v) for k, v in env.items()],
             labels=labels,
             task_id = node.name,
             in_cluster= True,

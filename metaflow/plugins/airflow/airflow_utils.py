@@ -205,32 +205,41 @@ def generate_rfc1123_name(flow_name, step_name):
     # the name has to be under 63 chars total
     return sanitized_long_name[:57] + "-" + hash[:5]
 
-# better name - _kubernetes_pod_operator_args
-# also, the output of this method is something that we should be able to generate
-# statically on the user's workstation and not on Airflow server. basically - we can
-# massage operator_args in the correct format before writing them out to the DAG file.
-# that has a great side-effect of allowing us to eye-ball the results in the DAG file
-# and not rely on more on-the-fly transformations.
 def _kubernetes_pod_operator_args(flow_name, step_name, operator_args):
     from kubernetes import client
     
     from airflow.kubernetes.secret import Secret
-    
     # Set dynamic env variables like run-id, task-id etc from here.
     secrets = [
         Secret("env", secret, secret) for secret in operator_args.get("secrets", [])
     ]
     args = operator_args
     args.update({
-        # we should be able to have a cleaner name - take a look at the argo implementation
+        # todo : we should be able to have a cleaner name - take a look at the argo implementation
         "name": generate_rfc1123_name(flow_name, step_name),
         "secrets": secrets,        
         # Question for (savin): 
             # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user? 
-        # annotations are not empty. see @kubernetes or argo-workflows
+        
+        # todo :annotations are not empty. see @kubernetes or argo-workflows
         "annotations": {},
 
     })
+    # Below cannot be passed in dictionary form. After trying a few times it didin't work.
+    additional_env_vars = [
+            client.V1EnvVar(
+                name=k,
+                value_from=client.V1EnvVarSource(
+                    field_ref=client.V1ObjectFieldSelector(field_path=str(v))
+                ),
+            )
+            for k, v in {
+                "METAFLOW_KUBERNETES_POD_NAMESPACE": "metadata.namespace",
+                "METAFLOW_KUBERNETES_POD_NAME": "metadata.name",
+                "METAFLOW_KUBERNETES_POD_ID": "metadata.uid",
+            }.items()
+        ]
+    args["env_vars"] = [client.V1EnvVar(name=x["name"],value=x["value"]) for x in args["env_vars"]] + additional_env_vars
     
     # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries 
     # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via 
@@ -248,28 +257,6 @@ def _kubernetes_pod_operator_args(flow_name, step_name, operator_args):
     if operator_args.get("retry_delay", None):
         args["retry_delay"] = timedelta(**operator_args.get("retry_delay"))
     return args
-
-# why do we need a separate method for this function? can we just embed the logic in
-# _kubernetes_task?
-def get_k8s_operator():
-
-    try:
-        from airflow.contrib.operators.kubernetes_pod_operator import (
-            KubernetesPodOperator,
-        )
-    except ImportError:
-        try:
-            from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import (
-                KubernetesPodOperator,
-            )
-        except ImportError as e:
-            raise KubernetesProviderNotFound(
-                "This DAG requires a `KubernetesPodOperator`. "
-                "Install the Airflow Kubernetes provider using : "
-                "`pip install apache-airflow-providers-cncf-kubernetes`"
-            )
-
-    return KubernetesPodOperator
 
 
 def _parse_sensor_args(name, kwargs):
@@ -347,7 +334,21 @@ class AirflowTask(object):
         ).set_operator_args(**op_args)
 
     def _kubenetes_task(self):
-        KubernetesPodOperator = get_k8s_operator()
+        try:
+            from airflow.contrib.operators.kubernetes_pod_operator import (
+                KubernetesPodOperator,
+            )
+        except ImportError:
+            try:
+                from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import (
+                    KubernetesPodOperator,
+                )
+            except ImportError as e:
+                raise KubernetesProviderNotFound(
+                    "This DAG requires a `KubernetesPodOperator`. "
+                    "Install the Airflow Kubernetes provider using : "
+                    "`pip install apache-airflow-providers-cncf-kubernetes`"
+                )
         k8s_args = _kubernetes_pod_operator_args(
             self._flow_name, self.name, self._operator_args
         )
