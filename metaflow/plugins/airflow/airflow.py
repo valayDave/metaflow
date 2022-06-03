@@ -568,8 +568,8 @@ class Airflow(object):
                 dict(
                     # Converting the configuration to base64 so that there can be no indentation related issues that can be caused because of
                     # malformed strings / json.
-                    metaflow_workflow_compile_params=json_dag,
-                    AIRFLOW_UTILS=util_file,
+                    config=json_dag,
+                    utils=util_file,
                     deployed_on=str(datetime.now()),
                 ),
             )
