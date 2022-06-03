@@ -23,6 +23,7 @@ from metaflow.plugins.aws.eks.kubernetes import (Kubernetes,
 from metaflow.plugins.cards.card_modules import chevron
 from metaflow.plugins.timeout_decorator import get_run_time_limit_for_task
 from metaflow.util import dict_to_cli_options, get_username, compress_list
+from metaflow.parameters import JSONTypeClass
 
 from . import airflow_utils
 from .airflow_decorator import SUPPORTED_SENSORS, AirflowSensorDecorator
@@ -171,6 +172,8 @@ class Airflow(object):
             str.__name__: "string",
             bool.__name__: "string",
             float.__name__: "number",
+            JSONTypeClass.name: "string"
+
         }
         type_parser = {bool.__name__: lambda v: str(v)}
 
@@ -185,20 +188,12 @@ class Airflow(object):
                 )
             seen.add(norm)
 
-            is_required = param.kwargs.get("required", False)
-            # Throw an exception if a schedule is set for a flow with required
-            # parameters with no defaults.
-            if "default" not in param.kwargs and is_required:
+            # Airflow requires defaults set for parameters. 
+            if "default" not in param.kwargs:
                 raise MetaflowException(
                     "The parameter *%s* does not have a "
-                    "default while having 'required' set to 'True'. "
-                    "A default is required for such parameters when deploying on Airflow."
-                )
-            if "default" not in param.kwargs and self.schedule_interval:
-                raise MetaflowException(
-                    "When @schedule is set with Airflow, Parameters require default values. "
-                    "The parameter *%s* does not have a "
-                    "'default' set"
+                    "default set. "
+                    "A default is required for parameters when deploying on Airflow."
                 )
             value = deploy_time_eval(param.kwargs.get("default"))
             parameters.append(dict(name=param.name, value=value))
@@ -213,11 +208,13 @@ class Airflow(object):
                 airflow_param["default"] = value
             if param_help:
                 airflow_param["description"] = param_help
-            
-            if param_type is not None and param_type.__name__ in type_transform_dict:
-                airflow_param["type"] = type_transform_dict[param_type.__name__]
-                if param_type.__name__ in type_parser and value is not None:
-                    airflow_param["default"] = type_parser[param_type.__name__](value)
+            if param_type is not None:
+                if isinstance(param_type,JSONTypeClass):
+                    airflow_param["type"] = type_transform_dict[JSONTypeClass.name]
+                elif param_type.__name__ in type_transform_dict:
+                    airflow_param["type"] = type_transform_dict[param_type.__name__]
+                    if param_type.__name__ in type_parser and value is not None:
+                        airflow_param["default"] = type_parser[param_type.__name__](value)
 
             airflow_params.append(airflow_param)
         self.parameters = airflow_params
@@ -246,8 +243,8 @@ class Airflow(object):
 
     def _to_job(self, node):
         """
-        This function will transform the node's specification into Airflow compatible operator arguements. 
-        Since this function is long. We it performs two major duties:
+        This function will transform the node's specification into Airflow compatible operator arguments. 
+        Since this function is long. It performs two major duties:
             1. Based on the type of the graph node (start/linear/foreach/join etc.) it will decide how to set the input paths
             2. Based on node's decorator specification convert the information into a job spec for the KubernetesPodOperator. 
         """
@@ -329,6 +326,10 @@ class Airflow(object):
             self.flow_datastore, self.metadata, self.environment, self.flow.name, self.run_id, node.name, self.task_id, self.attempt
         )
         user = util.get_username()
+    
+        airflow_task_id = AIRFLOW_TASK_ID_TEMPLATE_VALUE
+        mf_run_id = "%s-{{ [run_id, dag_run.dag_id] | run_id_creator }}" % RUN_ID_PREFIX  # run_id_creator is added via the `user_defined_filters`
+        attempt = "{{ task_instance.try_number - 1 }}"
         labels = {
             "app": "metaflow",
             "metaflow/flow_name": sanitize_label_value(self.flow.name),
@@ -338,6 +339,9 @@ class Airflow(object):
             # Question to (savin) : Should we have username set over here for created by since it is the airflow installation that is creating the jobs. 
             # Technically the "user" is the stakeholder but should these labels be present. 
             "app.kubernetes.io/created-by": sanitize_label_value(user),
+            "metaflow/attempt": attempt,
+            "metaflow/run_id": mf_run_id,
+            "metaflow/task_id": airflow_task_id,
         }
         # Add Metaflow system tags as labels as well!
         for sys_tag in self.metadata.sticky_sys_tags:
@@ -348,7 +352,7 @@ class Airflow(object):
         additional_mf_variables = {
             "METAFLOW_CODE_SHA": self.code_package_sha,
             "METAFLOW_CODE_URL": self.code_package_url,
-            "METAFLOW_CODE_DS": self.datastore.TYPE,
+            "METAFLOW_CODE_DS": self.flow_datastore.TYPE,
             "METAFLOW_USER": user,
             "METAFLOW_SERVICE_URL": BATCH_METADATA_SERVICE_URL,
             "METAFLOW_SERVICE_HEADERS": json.dumps(BATCH_METADATA_SERVICE_HEADERS),
@@ -360,35 +364,57 @@ class Airflow(object):
             "METAFLOW_KUBERNETES_WORKLOAD": 1,
             "METAFLOW_RUNTIME_ENVIRONMENT": "kubernetes",
             "METAFLOW_CARD_S3ROOT": DATASTORE_CARD_S3ROOT,
+            "METAFLOW_RUN_ID":mf_run_id,
+            "METAFLOW_AIRFLOW_TASK_ID":airflow_task_id,
+            "METAFLOW_AIRFLOW_DAG_RUN_ID":"{{run_id}}",
+            "METAFLOW_AIRFLOW_JOB_ID":"{{ti.job_id}}",
+            "METAFLOW_ATTEMPT_NUMBER":attempt,
         }
         env.update(additional_mf_variables)
-        
-        service_account = k8s_deco.attributes["service_account"]
 
+        service_account = KUBERNETES_SERVICE_ACCOUNT if k8s_deco.attributes["service_account"] is None else k8s_deco.attributes["service_account"]
+        k8s_namespace = k8s_deco.attributes["namespace"] if k8s_deco.attributes["namespace"] is not None else "default"
         k8s_operator_args = dict(
-            namespace=k8s_deco.attributes["namespace"],
-            service_account_name=KUBERNETES_SERVICE_ACCOUNT
-            if service_account is None
-            else service_account,
+            namespace=k8s_namespace,
+            service_account_name=service_account,
             node_selector=k8s_deco.attributes["node_selector"],
             cmds=k8s._command(
                 code_package_url=self.code_package_url,
                 step_cmds= self._step_cli(node, input_paths, self.code_package_url, user_code_retries),
             ),
-            in_cluster=True,
             image=k8s_deco.attributes["image"],
-            cpu=k8s_deco.attributes["cpu"],
-            memory=k8s_deco.attributes["memory"],
-            disk=k8s_deco.attributes["disk"],
+            resources = dict(
+                requests = {
+                    "cpu":k8s_deco.attributes["cpu"],
+                    "memory":"%sM"%str(k8s_deco.attributes["memory"]),
+                    "ephemeral-storage":str(k8s_deco.attributes["disk"]),
+                }
+            ),
             execution_timeout=dict(seconds=runtime_limit),
-            retry_delay=dict(seconds=retry_delay.total_seconds()) if retry_delay else None,
             retries=user_code_retries,
-            env_vars=[dict(name=k, value=v) for k, v in env.items()],
+            env_vars=[dict(name=k, value=v) for k, v in env.items()] + [
+                # set some env variables via kubernetes
+                dict(name=k,value_from=dict(field_ref=dict(field_path=v)))for k, v in {
+                    "METAFLOW_KUBERNETES_POD_NAMESPACE": "metadata.namespace",
+                    "METAFLOW_KUBERNETES_POD_NAME": "metadata.name",
+                    "METAFLOW_KUBERNETES_POD_ID": "metadata.uid",
+                }.items()
+            ],
             labels=labels,
+            task_id = node.name,
+            in_cluster= True,
+            get_logs =True,
+            do_xcom_push= True,
+            log_events_on_failure=True,
             is_delete_operator_pod=True,
+            retry_exponential_backoff= False,  # todo : should this be a arg we allow on CLI. not right now - there is an open ticket for this - maybe at some point we will.
+            reattach_on_restart=False,
         )
         if k8s_deco.attributes["secrets"]:
             k8s_operator_args["secrets"] = k8s_deco.attributes["secrets"]
+        
+        if retry_delay:
+            k8s_operator_args["retry_delay"]=dict(seconds=retry_delay.total_seconds())
 
         return k8s_operator_args
 
@@ -593,6 +619,7 @@ class Airflow(object):
             # TODO: Enable emails
             "retries": 0,
             "execution_timeout": timedelta(days=5),
+            "retry_delay": timedelta(seconds=200),
             # check https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/models/baseoperator/index.html?highlight=retry_delay#airflow.models.baseoperator.BaseOperatorMeta
         }
         if self.worker_pool is not None:
