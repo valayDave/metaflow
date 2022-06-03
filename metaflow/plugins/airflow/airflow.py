@@ -542,10 +542,10 @@ class Airflow(object):
 
         # set max active tasks here , For more info check here :
         # https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/models/dag/index.html#airflow.models.dag.DAG
-        other_args = (
+        airflow_dag_args = (
             {} if self.max_workers is None else dict(max_active_tasks=self.max_workers)
         )
-        other_args["is_paused_upon_creation"] = self.is_paused_upon_creation
+        airflow_dag_args["is_paused_upon_creation"] = self.is_paused_upon_creation
 
         appending_sensors = self._collect_flow_sensors()
         workflow = Workflow(
@@ -557,7 +557,7 @@ class Airflow(object):
             tags=self.tags,
             file_path=self._file_path,
             graph_structure=self.graph_structure,
-            **other_args
+            **airflow_dag_args
         )
         workflow = _visit(self.graph["start"], workflow)
         
