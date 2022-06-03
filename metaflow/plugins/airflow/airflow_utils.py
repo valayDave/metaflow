@@ -1,12 +1,12 @@
-from collections import defaultdict
-import os
-import typing
-import json
-import time
-import random
 import hashlib
+import json
+import os
+import random
 import re
-from datetime import timedelta, datetime
+import time
+import typing
+from collections import defaultdict
+from datetime import datetime, timedelta
 
 
 class KubernetesProviderNotFound(Exception):
@@ -31,8 +31,9 @@ TASK_ID_LEN = 8
 # we can rename steps in a foreach with indexes (eg. `stepname-$index`) to create those steps.
 # Hence : Foreachs will require some special form of plumbing.
 # https://stackoverflow.com/questions/62962386/can-an-airflow-task-dynamically-generate-a-dag-at-runtime
+# TODO: Reference RUN_ID_PREFIX here
 AIRFLOW_TASK_ID_TEMPLATE_VALUE = (
-    "arf-{{ [run_id, ti.task_id, dag_run.dag_id ] | task_id_creator  }}"
+    "airflow-{{ [run_id, ti.task_id, dag_run.dag_id ] | task_id_creator  }}"
 )
 
 
@@ -46,6 +47,7 @@ class SensorNames:
         return list(cls.__dict__.values())
 
 
+# TODO: This can be removed. See how labels/annotations are handled in Metaflow today.
 def sanitize_label_value(val):
     # Label sanitization: if the value can be used as is, return it as is.
     # If it can't, sanitize and add a suffix based on hash of the original
@@ -89,6 +91,8 @@ def dash_connect(val):
 # It is not being used at the moment but can be very easily in the future.
 # Just set `PARENT_TASK_INSTANCE_STATUS_MACRO` to some environment variable
 # it will create a json dictionary at task runtime.
+# just SensorMetadata? Also, looking at the usage, we should be able to do away with
+# this class entirely and embed the logic in get_sensor_metadata?
 class SensorMetaExtractor:
     """
     Extracts the metadata about the upstream sensors that are triggering the DAG.
@@ -100,14 +104,18 @@ class SensorMetaExtractor:
             task_id=airflow_operator.task_id,
             state=task_instance.state,
             operator_type=task_instance.operator,
+            # just metadata
             task_metadata=self._get_metadata(task_instance, airflow_operator, dag_run),
         )
 
+    # this method shouldn't be a public method of this class. Only ExternalTaskSensor
+    # will have reason to use this method - we may as well move this method within 
+    # get_metadata
     @staticmethod
     def external_task_sensor_run_ids(task_instance, airflow_operator, logical_date):
         def resolve_run_ids(airflow_operator, dates):
             from airflow.models import DagRun
-
+            # why is DR needed - can't we directly use DagRun?
             DR = DagRun
             vals = []
             for d in dates:
@@ -117,6 +125,7 @@ class SensorMetaExtractor:
                 vals.append(run_id)
             return vals
 
+        # can you add a url reference to the code instead on the comment below?
         # ----THIS CODE BLOCK USES LOGIC GIVEN IN EXTERNAL TASK SENSOR-----
         if airflow_operator.execution_delta:
             dttm = logical_date - airflow_operator.execution_delta
@@ -132,9 +141,12 @@ class SensorMetaExtractor:
         resolvd_run_ids = resolve_run_ids(airflow_operator, dttm_filter)
         return resolvd_run_ids
 
+    # I am not sure we need a function for this. you can simply generate a dictionary
+    # in _get_metadata
     def _make_metadata(self, name, value):
         return dict(name=name, value=value)
 
+    # rename this to metadata
     def _get_metadata(self, task_instance, airflow_operator, dag_run):
         metadata = []
         if task_instance.operator == "ExternalTaskSensor":
@@ -175,6 +187,7 @@ class SensorMetaExtractor:
             )
         return metadata
 
+
     def get_data(self):
         return self._data
 
@@ -211,6 +224,9 @@ class AirflowDAGArgs(object):
     # different keys that need to be parsed. None of the "values" in this
     # dictionary are being used. But the "types" of the values of are used when
     # reparsing the arguments from the config variable.
+
+    # TODO: These values are being overriden in airflow.py. Can we list the
+    #       sensible defaults directly here so that it is easier to grok the code.
     _arg_types = {
         "dag_id": "asdf",
         "description": "asdfasf",
@@ -253,13 +269,15 @@ class AirflowDAGArgs(object):
         self._args = kwargs
 
     @property
-    def arguements(self):
+    def arguements(self): # TODO: Fix spelling
         return dict(**self._args, **self.metaflow_specific_args)
 
+    # just serialize?
     def _serialize_args(self):
         def parse_args(dd):
             data_dict = {}
             for k, v in dd.items():
+                # see the comment below for `from_dict`
                 if k == "default_args":
                     data_dict[k] = parse_args(v)
                 elif isinstance(v, datetime):
@@ -272,6 +290,7 @@ class AirflowDAGArgs(object):
 
         return parse_args(self._args)
 
+    # just deserialize?
     @classmethod
     def from_dict(cls, data_dict):
         def parse_args(dd, type_check_dict):
@@ -280,6 +299,9 @@ class AirflowDAGArgs(object):
                 if k not in type_check_dict:
                     kwrgs[k] = v
                     continue
+                # wouldn't you want to do this parsing for any type of nested structure
+                # that is not datetime or timedelta? that should remove the reliance on
+                # the magic word - default_args
                 if k == "default_args":
                     kwrgs[k] = parse_args(v, type_check_dict[k])
                 elif isinstance(type_check_dict[k], datetime):
@@ -293,10 +315,12 @@ class AirflowDAGArgs(object):
         return cls(**parse_args(data_dict, cls._arg_types))
 
     def to_dict(self):
+        # dd is quite cryptic. why not just return self._serialize? also do we even need
+        # this method? how about we just use `serialize`?
         dd = self._serialize_args()
         return dd
 
-
+# TODO: This shouldn't be strictly needed?
 def generate_rfc1123_name(flow_name, step_name):
     """
     Generate RFC 1123 compatible name. Specifically, the format is:
@@ -319,13 +343,20 @@ def generate_rfc1123_name(flow_name, step_name):
     # the name has to be under 63 chars total
     return sanitized_long_name[:57] + "-" + hash[:5]
 
-
+# better name - _kubernetes_pod_operator_args
+# also, the output of this method is something that we should be able to generate
+# statically on the user's workstation and not on Airflow server. basically - we can
+# massage operator_args in the correct format before writing them out to the DAG file.
+# that has a great side-effect of allowing us to eye-ball the results in the DAG file
+# and not rely on more on-the-fly transformations.
 def set_k8s_operator_args(flow_name, step_name, operator_args):
     from kubernetes import client
     from airflow.kubernetes.secret import Secret
 
     task_id = AIRFLOW_TASK_ID_TEMPLATE_VALUE
-    run_id = "arf-{{ [run_id, dag_run.dag_id] | dash_connect | hash }}"  # hash is added via the `user_defined_filters`
+    # TODO: Reference RUN_ID_PREFIX here. Also this seems like the only place where
+    #       dash_connect and hash are being used. Can we combine them together?
+    run_id = "airflow-{{ [run_id, dag_run.dag_id] | dash_connect | hash }}"  # hash is added via the `user_defined_filters`
     attempt = "{{ task_instance.try_number - 1 }}"
     # Set dynamic env variables like run-id, task-id etc from here.
     env_vars = (
@@ -363,6 +394,7 @@ def set_k8s_operator_args(flow_name, step_name, operator_args):
         "metaflow/run_id": run_id,
         "metaflow/task_id": task_id,
     }
+    # We don't support volumes at the moment for `@kubernetes`
     volume_mounts = [
         client.V1VolumeMount(**v) for v in operator_args.get("volume_mounts", [])
     ]
@@ -372,36 +404,53 @@ def set_k8s_operator_args(flow_name, step_name, operator_args):
     ]
     args = {
         # "on_retry_callback": retry_callback,
+        # use the default namespace even no namespace is defined rather than airflow
         "namespace": operator_args.get("namespace", "airflow"),
+        # image is always available - no need for a fallback
         "image": operator_args.get("image", "python"),
+        # we should be able to have a cleaner name - take a look at the argo implementation
         "name": generate_rfc1123_name(flow_name, step_name),
         "task_id": step_name,
+        # do we need to specify args that are None? can we just rely on the system
+        # defaults for such args?
         "random_name_suffix": None,
         "cmds": operator_args.get("cmds", []),
         "arguments": operator_args.get("arguments", []),
+        # do we use ports?
         "ports": operator_args.get("ports", []),
+        # do we use volume mounts?
         "volume_mounts": volume_mounts,
+        # do we use volumes?
         "volumes": volumes,
         "env_vars": env_vars,
+        # how are the values for env_from computed?
         "env_from": operator_args.get("env_from", []),
         "secrets": secrets,
+        # will this ever be false?
         "in_cluster": operator_args.get(
             "in_cluster", True  #  run kubernetes client with in_cluster configuration.
         ),
         "labels": operator_args.get("labels", {}),
         "reattach_on_restart": False,
+        # is there a default value we can rely on? we would ideally like the sys-admin
+        # to be able to set these values inside their airflow deployment
         "startup_timeout_seconds": 120,
         "get_logs": True,  # This needs to be set to True to ensure that doesn't error out looking for xcom
+        # we should use the default image pull policy
         "image_pull_policy": None,
+        # annotations are not empty. see @kubernetes or argo-workflows
         "annotations": {},
         "resources": client.V1ResourceRequirements(
+            # need to support disk and gpus - also the defaults don't match up to
+            # the expected values. let's avoid adding defaults ourselves where we can.
             requests={
                 "cpu": operator_args.get("cpu", 1),
                 "memory": operator_args.get("memory", "2000M"),
             }
         ),  # kubernetes.client.models.v1_resource_requirements.V1ResourceRequirements
         "retries": operator_args.get("retries", 0),  # Base operator command
-        "retry_exponential_backoff": False,  # todo : should this be a arg we allow on CLI.
+        
+        "retry_exponential_backoff": False,  # todo : should this be a arg we allow on CLI. not right now - there is an open ticket for this - maybe at some point we will.
         "affinity": None,  # kubernetes.client.models.v1_affinity.V1Affinity
         "config_file": None,
         # image_pull_secrets : typing.Union[typing.List[kubernetes.client.models.v1_local_object_reference.V1LocalObjectReference], NoneType],
@@ -409,9 +458,11 @@ def set_k8s_operator_args(flow_name, step_name, operator_args):
         "service_account_name": operator_args.get(  # Service account names can be essential for passing reference to IAM roles etc.
             "service_account_name", None
         ),
+        # let's rely on the default values
         "is_delete_operator_pod": operator_args.get(
             "is_delete_operator_pod", False
         ),  # if set to true will delete the pod once finished /failed execution. By default it is true
+        # let's rely on the default values
         "hostnetwork": False,  # If True enable host networking on the pod.
         "security_context": {},
         "log_events_on_failure": True,
@@ -428,7 +479,8 @@ def set_k8s_operator_args(flow_name, step_name, operator_args):
         args["retry_delay"] = timedelta(**operator_args.get("retry_delay"))
     return args
 
-
+# why do we need a separate method for this function? can we just embed the logic in
+# _kubernetes_task?
 def get_k8s_operator():
 
     try:
