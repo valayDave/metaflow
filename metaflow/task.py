@@ -292,6 +292,12 @@ class MetaflowTask(object):
                     type="origin-run-id",
                     tags=metadata_tags,
                 ),
+                MetaDatum(
+                    field="attempt",
+                    value=str(retry_count),
+                    type="attempt",
+                    tags=metadata_tags,
+                ),
             ],
         )
         output.done()
@@ -425,6 +431,7 @@ class MetaflowTask(object):
             namespace=resolve_identity(),
             username=get_username(),
             is_running=True,
+            tags=self.metadata.sticky_tags,
         )
 
         # 5. run task

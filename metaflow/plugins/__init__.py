@@ -80,9 +80,10 @@ def get_plugin_cli():
     # Add new CLI commands in this list
     from . import package_cli
     from .aws.batch import batch_cli
-    from .aws.eks import kubernetes_cli
+    from .kubernetes import kubernetes_cli
     from .aws.step_functions import step_functions_cli
     from .airflow import airflow_cli
+    from .argo import argo_workflows_cli
     from .cards import card_cli
 
     return _ext_plugins["get_plugin_cli"]() + [
@@ -92,6 +93,7 @@ def get_plugin_cli():
         kubernetes_cli.cli,
         step_functions_cli.cli,
         airflow_cli.cli,
+        argo_workflows_cli.cli,
     ]
 
 
@@ -103,7 +105,8 @@ from .parallel_decorator import ParallelDecorator
 from .retry_decorator import RetryDecorator
 from .resources_decorator import ResourcesDecorator
 from .aws.batch.batch_decorator import BatchDecorator
-from .aws.eks.kubernetes_decorator import KubernetesDecorator
+from .kubernetes.kubernetes_decorator import KubernetesDecorator
+from .argo.argo_workflows_decorator import ArgoWorkflowsInternalDecorator
 from .aws.step_functions.step_functions_decorator import StepFunctionsInternalDecorator
 from .test_unbounded_foreach_decorator import (
     InternalTestUnboundedForeachDecorator,
@@ -130,6 +133,7 @@ STEP_DECORATORS = [
     PytorchParallelDecorator,
     InternalTestUnboundedForeachDecorator,
     AirflowInternalDecorator,
+    ArgoWorkflowsInternalDecorator,
 ]
 _merge_lists(STEP_DECORATORS, _ext_plugins["STEP_DECORATORS"], "name")
 
