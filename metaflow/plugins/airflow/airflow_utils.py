@@ -68,9 +68,9 @@ def sanitize_label_value(val):
 
 
 def run_id_creator(val):
-    # join `[dag-id,run-id]` of airflow dag. 
+    # join `[dag-id,run-id]` of airflow dag.
     return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:RUN_ID_LEN]
-    
+
 
 def task_id_creator(lst):
     # This is a filter which creates a hash of the run_id/step_name string.
@@ -83,7 +83,7 @@ def json_dump(val):
     return json.dumps(val)
 
 
-# TODO : (savin-comments) Fix serialization of args : 
+# TODO : (savin-comments) Fix serialization of args :
 class AirflowDAGArgs(object):
     # _arg_types This object helps map types of
     # different keys that need to be parsed. None of the "values" in this
@@ -124,7 +124,7 @@ class AirflowDAGArgs(object):
         "user_defined_filters": dict(
             task_id_creator=lambda v: task_id_creator(v),
             json_dump=lambda val: json_dump(val),
-            run_id_creator=lambda val:run_id_creator(val)
+            run_id_creator=lambda val: run_id_creator(val),
         ),
     }
 
@@ -183,6 +183,7 @@ class AirflowDAGArgs(object):
         dd = self._serialize_args()
         return dd
 
+
 # TODO : (savin-comments) This shouldn't be strictly needed?
 def generate_rfc1123_name(flow_name, step_name):
     """
@@ -206,48 +207,52 @@ def generate_rfc1123_name(flow_name, step_name):
     # the name has to be under 63 chars total
     return sanitized_long_name[:57] + "-" + hash[:5]
 
+
 def _kubernetes_pod_operator_args(flow_name, step_name, operator_args):
     from kubernetes import client
-    
+
     from airflow.kubernetes.secret import Secret
+
     # Set dynamic env variables like run-id, task-id etc from here.
     secrets = [
         Secret("env", secret, secret) for secret in operator_args.get("secrets", [])
     ]
     args = operator_args
-    args.update({
-        # TODO : (savin-comments) : we should be able to have a cleaner name - take a look at the argo implementation
-        "name": generate_rfc1123_name(flow_name, step_name),
-        "secrets": secrets,        
-        # Question for (savin): 
-            # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user? 
-        
-        # todo :annotations are not empty. see @kubernetes or argo-workflows
-        "annotations": {},
-
-    })
+    args.update(
+        {
+            # TODO : (savin-comments) : we should be able to have a cleaner name - take a look at the argo implementation
+            "name": generate_rfc1123_name(flow_name, step_name),
+            "secrets": secrets,
+            # Question for (savin):
+            # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user?
+            # todo :annotations are not empty. see @kubernetes or argo-workflows
+            "annotations": {},
+        }
+    )
     # Below cannot be passed in dictionary form. After trying a few times it didin't work.
     additional_env_vars = [
-            client.V1EnvVar(
-                name=k,
-                value_from=client.V1EnvVarSource(
-                    field_ref=client.V1ObjectFieldSelector(field_path=str(v))
-                ),
-            )
-            for k, v in {
-                "METAFLOW_KUBERNETES_POD_NAMESPACE": "metadata.namespace",
-                "METAFLOW_KUBERNETES_POD_NAME": "metadata.name",
-                "METAFLOW_KUBERNETES_POD_ID": "metadata.uid",
-            }.items()
-        ]
-    args["env_vars"] = [client.V1EnvVar(name=x["name"],value=x["value"]) for x in args["env_vars"]] + additional_env_vars
-    
-    # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries 
-    # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via 
+        client.V1EnvVar(
+            name=k,
+            value_from=client.V1EnvVarSource(
+                field_ref=client.V1ObjectFieldSelector(field_path=str(v))
+            ),
+        )
+        for k, v in {
+            "METAFLOW_KUBERNETES_POD_NAMESPACE": "metadata.namespace",
+            "METAFLOW_KUBERNETES_POD_NAME": "metadata.name",
+            "METAFLOW_KUBERNETES_POD_ID": "metadata.uid",
+        }.items()
+    ]
+    args["env_vars"] = [
+        client.V1EnvVar(name=x["name"], value=x["value"]) for x in args["env_vars"]
+    ] + additional_env_vars
+
+    # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries
+    # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via
     # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function
     resources = args.get("resources")
     args["resources"] = client.V1ResourceRequirements(
-        requests = resources['requests'],
+        requests=resources["requests"],
     )
     if operator_args.get("execution_timeout", None):
         args["execution_timeout"] = timedelta(
