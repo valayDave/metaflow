@@ -10,11 +10,14 @@ from datetime import datetime, timedelta
 import metaflow.util as util
 from metaflow.decorators import flow_decorators
 from metaflow.exception import MetaflowException
-from metaflow.metaflow_config import (BATCH_METADATA_SERVICE_HEADERS,
-                                      BATCH_METADATA_SERVICE_URL,
-                                      DATASTORE_CARD_S3ROOT,
-                                      DATASTORE_SYSROOT_S3, DATATOOLS_S3ROOT,
-                                      KUBERNETES_SERVICE_ACCOUNT)
+from metaflow.metaflow_config import (
+    BATCH_METADATA_SERVICE_HEADERS,
+    BATCH_METADATA_SERVICE_URL,
+    DATASTORE_CARD_S3ROOT,
+    DATASTORE_SYSROOT_S3,
+    DATATOOLS_S3ROOT,
+    KUBERNETES_SERVICE_ACCOUNT,
+)
 from metaflow.parameters import deploy_time_eval
 from metaflow.plugins.kubernetes.kubernetes import Kubernetes
 
@@ -26,14 +29,16 @@ from metaflow.parameters import JSONTypeClass
 
 from . import airflow_utils
 from .airflow_decorator import SUPPORTED_SENSORS, AirflowSensorDecorator
-from .airflow_utils import (AIRFLOW_TASK_ID_TEMPLATE_VALUE,
-                            RUN_ID_LEN,
-                            RUN_ID_PREFIX,
-                            TASK_ID_XCOM_KEY, AirflowTask, Workflow)
+from .airflow_utils import (
+    AIRFLOW_TASK_ID_TEMPLATE_VALUE,
+    RUN_ID_LEN,
+    RUN_ID_PREFIX,
+    TASK_ID_XCOM_KEY,
+    AirflowTask,
+    Workflow,
+)
 
 AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "dag.py")
-
-
 
 
 class AirflowException(MetaflowException):
@@ -110,11 +115,14 @@ class Airflow(object):
 
     def _set_scheduling_interval(self):
         """
-        The airflow integration allows setting schedule interval using `@schedule` and `@airflow_schedule_interval` decorator. 
-        This method will extract interval from both and apply the one which is not None. We raise an exception in the 
-        airflow_cli.py if both flow decorators are set. 
+        The airflow integration allows setting schedule interval using `@schedule` and `@airflow_schedule_interval` decorator.
+        This method will extract interval from both and apply the one which is not None. We raise an exception in the
+        airflow_cli.py if both flow decorators are set.
         """
-        schedule_decorator_cron_pattern, airflow_schedule_decorator_cron_pattern = self._get_schedule(), self._get_airflow_schedule_interval()
+        schedule_decorator_cron_pattern, airflow_schedule_decorator_cron_pattern = (
+            self._get_schedule(),
+            self._get_airflow_schedule_interval(),
+        )
         self.schedule_interval = None
         if schedule_decorator_cron_pattern is not None:
             self.schedule_interval = schedule_decorator_cron_pattern
@@ -141,7 +149,7 @@ class Airflow(object):
         schedule_interval = self.flow._flow_decorators.get("airflow_schedule_interval")
         if schedule_interval is None:
             return None
-        return schedule_interval.schedule    
+        return schedule_interval.schedule
 
     def _get_retries(self, node):
         max_user_code_retries = 0
@@ -171,8 +179,7 @@ class Airflow(object):
             str.__name__: "string",
             bool.__name__: "string",
             float.__name__: "number",
-            JSONTypeClass.name: "string"
-
+            JSONTypeClass.name: "string",
         }
         type_parser = {bool.__name__: lambda v: str(v)}
 
@@ -187,7 +194,7 @@ class Airflow(object):
                 )
             seen.add(norm)
 
-            # Airflow requires defaults set for parameters. 
+            # Airflow requires defaults set for parameters.
             if "default" not in param.kwargs:
                 raise MetaflowException(
                     "The parameter *%s* does not have a "
@@ -196,7 +203,7 @@ class Airflow(object):
                 )
             value = deploy_time_eval(param.kwargs.get("default"))
             parameters.append(dict(name=param.name, value=value))
-            
+
             # Setting airflow related param args.
             param_type = param.kwargs.get("type", None)
             airflow_param = dict(
@@ -208,12 +215,14 @@ class Airflow(object):
             if param_help:
                 airflow_param["description"] = param_help
             if param_type is not None:
-                if isinstance(param_type,JSONTypeClass):
+                if isinstance(param_type, JSONTypeClass):
                     airflow_param["type"] = type_transform_dict[JSONTypeClass.name]
                 elif param_type.__name__ in type_transform_dict:
                     airflow_param["type"] = type_transform_dict[param_type.__name__]
                     if param_type.__name__ in type_parser and value is not None:
-                        airflow_param["default"] = type_parser[param_type.__name__](value)
+                        airflow_param["default"] = type_parser[param_type.__name__](
+                            value
+                        )
 
             airflow_params.append(airflow_param)
         self.parameters = airflow_params
@@ -224,9 +233,7 @@ class Airflow(object):
         self,
         step_names,
     ):
-        return compress_list(
-            [ self._make_input_path(s) for s in step_names ]
-        )
+        return compress_list([self._make_input_path(s) for s in step_names])
 
     def _make_input_path(self, step_name):
         # This is set using the `airflow_internal` decorator.
@@ -242,10 +249,10 @@ class Airflow(object):
 
     def _to_job(self, node):
         """
-        This function will transform the node's specification into Airflow compatible operator arguments. 
+        This function will transform the node's specification into Airflow compatible operator arguments.
         Since this function is long. It performs two major duties:
             1. Based on the type of the graph node (start/linear/foreach/join etc.) it will decide how to set the input paths
-            2. Based on node's decorator specification convert the information into a job spec for the KubernetesPodOperator. 
+            2. Based on node's decorator specification convert the information into a job spec for the KubernetesPodOperator.
         """
         # supported compute : k8s (v1), local(v2), batch(v3)
         # Add env vars from the optional @environment decorator.
@@ -257,10 +264,10 @@ class Airflow(object):
         # The Below If/Else Block handle "Input Paths".
         # Input Paths help manage dataflow across the graph.
         if node.name == "start":
-            # POSSIBLE_FUTURE_IMPROVEMENT: 
-                # We can extract metadata about the possible upstream sensor triggers. 
-                # There is a previous commit (7bdf6) in the `airflow` branch that has `SensorMetaExtractor` class and 
-                # associated MACRO we have built to handle this case if a metadata regarding the sensor is needed. 
+            # POSSIBLE_FUTURE_IMPROVEMENT:
+            # We can extract metadata about the possible upstream sensor triggers.
+            # There is a previous commit (7bdf6) in the `airflow` branch that has `SensorMetaExtractor` class and
+            # associated MACRO we have built to handle this case if a metadata regarding the sensor is needed.
             # Initialize parameters for the flow in the `start` step.
             # `start` step has no upstream input dependencies aside from
             # parameters.
@@ -313,7 +320,7 @@ class Airflow(object):
         #   2. To set the input paths from the parent steps of a foreach join.
         #   3. To read the input paths in a foreach join.
 
-        # Extract the k8s decorators for constructing the arguments of the K8s Pod Operator on Airflow. 
+        # Extract the k8s decorators for constructing the arguments of the K8s Pod Operator on Airflow.
         k8s_deco = [deco for deco in node.decorators if deco.name == "kubernetes"][0]
         user_code_retries, _ = self._get_retries(node)
         retry_delay = self._get_retry_delay(node)
@@ -321,21 +328,21 @@ class Airflow(object):
         # The timeout is set as "execution_timeout" for an airflow task.
         runtime_limit = get_run_time_limit_for_task(node.decorators)
 
-        k8s = Kubernetes(
-            self.flow_datastore, self.metadata, self.environment
-        )
+        k8s = Kubernetes(self.flow_datastore, self.metadata, self.environment)
         user = util.get_username()
-    
+
         airflow_task_id = AIRFLOW_TASK_ID_TEMPLATE_VALUE
-        mf_run_id = "%s-{{ [run_id, dag_run.dag_id] | run_id_creator }}" % RUN_ID_PREFIX  # run_id_creator is added via the `user_defined_filters`
+        mf_run_id = (
+            "%s-{{ [run_id, dag_run.dag_id] | run_id_creator }}" % RUN_ID_PREFIX
+        )  # run_id_creator is added via the `user_defined_filters`
         attempt = "{{ task_instance.try_number - 1 }}"
         labels = {
             "app": "metaflow",
             "app.kubernetes.io/name": "metaflow-task",
             "app.kubernetes.io/part-of": "metaflow",
             "app.kubernetes.io/created-by": user,
-            # Question to (savin) : Should we have username set over here for created by since it is the airflow installation that is creating the jobs. 
-            # Technically the "user" is the stakeholder but should these labels be present. 
+            # Question to (savin) : Should we have username set over here for created by since it is the airflow installation that is creating the jobs.
+            # Technically the "user" is the stakeholder but should these labels be present.
         }
         additional_mf_variables = {
             "METAFLOW_CODE_SHA": self.code_package_sha,
@@ -348,56 +355,70 @@ class Airflow(object):
             "METAFLOW_DATATOOLS_S3ROOT": DATATOOLS_S3ROOT,
             "METAFLOW_DEFAULT_DATASTORE": "s3",
             "METAFLOW_DEFAULT_METADATA": "service",
-            # Question for (savin) : what does `METAFLOW_KUBERNETES_WORKLOAD` do ? 
+            # Question for (savin) : what does `METAFLOW_KUBERNETES_WORKLOAD` do ?
             "METAFLOW_KUBERNETES_WORKLOAD": str(1),
             "METAFLOW_RUNTIME_ENVIRONMENT": "kubernetes",
             "METAFLOW_CARD_S3ROOT": DATASTORE_CARD_S3ROOT,
-            "METAFLOW_RUN_ID":mf_run_id,
-            "METAFLOW_AIRFLOW_TASK_ID":airflow_task_id,
-            "METAFLOW_AIRFLOW_DAG_RUN_ID":"{{run_id}}",
-            "METAFLOW_AIRFLOW_JOB_ID":"{{ti.job_id}}",
-            "METAFLOW_ATTEMPT_NUMBER":attempt,
+            "METAFLOW_RUN_ID": mf_run_id,
+            "METAFLOW_AIRFLOW_TASK_ID": airflow_task_id,
+            "METAFLOW_AIRFLOW_DAG_RUN_ID": "{{run_id}}",
+            "METAFLOW_AIRFLOW_JOB_ID": "{{ti.job_id}}",
+            "METAFLOW_ATTEMPT_NUMBER": attempt,
         }
         env.update(additional_mf_variables)
 
-        service_account = KUBERNETES_SERVICE_ACCOUNT if k8s_deco.attributes["service_account"] is None else k8s_deco.attributes["service_account"]
-        k8s_namespace = k8s_deco.attributes["namespace"] if k8s_deco.attributes["namespace"] is not None else "default"
+        service_account = (
+            KUBERNETES_SERVICE_ACCOUNT
+            if k8s_deco.attributes["service_account"] is None
+            else k8s_deco.attributes["service_account"]
+        )
+        k8s_namespace = (
+            k8s_deco.attributes["namespace"]
+            if k8s_deco.attributes["namespace"] is not None
+            else "default"
+        )
         k8s_operator_args = dict(
             namespace=k8s_namespace,
             service_account_name=service_account,
             node_selector=k8s_deco.attributes["node_selector"],
             cmds=k8s._command(
-                self.flow.name, self.run_id, node.name, self.task_id, self.attempt,
+                self.flow.name,
+                self.run_id,
+                node.name,
+                self.task_id,
+                self.attempt,
                 code_package_url=self.code_package_url,
-                step_cmds= self._step_cli(node, input_paths, self.code_package_url, user_code_retries),
+                step_cmds=self._step_cli(
+                    node, input_paths, self.code_package_url, user_code_retries
+                ),
             ),
             image=k8s_deco.attributes["image"],
-            # TODO : (savin-comments) add gpu support with limits 
-            resources = dict(
-                requests = {
-                    "cpu":k8s_deco.attributes["cpu"],
-                    "memory":"%sM"%str(k8s_deco.attributes["memory"]),
-                    "ephemeral-storage":str(k8s_deco.attributes["disk"]),
+            # TODO : (savin-comments) add gpu support with limits
+            resources=dict(
+                requests={
+                    "cpu": k8s_deco.attributes["cpu"],
+                    "memory": "%sM" % str(k8s_deco.attributes["memory"]),
+                    "ephemeral-storage": str(k8s_deco.attributes["disk"]),
                 }
             ),
             execution_timeout=dict(seconds=runtime_limit),
             retries=user_code_retries,
             env_vars=[dict(name=k, value=v) for k, v in env.items()],
             labels=labels,
-            task_id = node.name,
-            in_cluster= True,
-            get_logs =True,
-            do_xcom_push= True,
+            task_id=node.name,
+            in_cluster=True,
+            get_logs=True,
+            do_xcom_push=True,
             log_events_on_failure=True,
             is_delete_operator_pod=True,
-            retry_exponential_backoff= False,  # todo : should this be a arg we allow on CLI. not right now - there is an open ticket for this - maybe at some point we will.
+            retry_exponential_backoff=False,  # todo : should this be a arg we allow on CLI. not right now - there is an open ticket for this - maybe at some point we will.
             reattach_on_restart=False,
         )
         if k8s_deco.attributes["secrets"]:
             k8s_operator_args["secrets"] = k8s_deco.attributes["secrets"]
-        
+
         if retry_delay:
-            k8s_operator_args["retry_delay"]=dict(seconds=retry_delay.total_seconds())
+            k8s_operator_args["retry_delay"] = dict(seconds=retry_delay.total_seconds())
 
         return k8s_operator_args
 
@@ -570,7 +591,7 @@ class Airflow(object):
             **airflow_dag_args
         )
         workflow = _visit(self.graph["start"], workflow)
-        
+
         workflow.set_parameters(self.parameters)
         if len(appending_sensors) > 0:
             for s in appending_sensors:
