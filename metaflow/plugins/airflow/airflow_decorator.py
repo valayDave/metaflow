@@ -11,9 +11,10 @@ from .airflow_utils import TASK_ID_XCOM_KEY, AirflowTask, SensorNames
 K8S_XCOM_DIR_PATH = "/airflow/xcom"
 
 
-# # TODO : (savin-comments)  : 
-    # there are 6 decorators in this class right now - making it difficult to parse
-    # the file. can we split this out with every decorator getting it's own file?
+# # TODO : (savin-comments)  :
+# there are 6 decorators in this class right now - making it difficult to parse
+# the file. can we split this out with every decorator getting it's own file?
+
 
 def safe_mkdir(dir):
     try:
@@ -50,7 +51,7 @@ def _get_sensor_exception():
     return AirflowSensorException
 
 
-# # TODO : (savin-comments) : refactor this to a common place. 
+# # TODO : (savin-comments) : refactor this to a common place.
 def _arg_exception(arg_name, deconame, value, allowed_values=None, allowed_type=None):
     msg_str = "`%s` cannot be `%s` when using @%s" % (
         arg_name,
