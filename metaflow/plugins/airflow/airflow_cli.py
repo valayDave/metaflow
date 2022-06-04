@@ -124,10 +124,9 @@ def make_flow(
     # Validate if the workflow is correctly parsed.
     # _validate_workflow(obj.flow, obj.graph, obj.flow_datastore, obj.metadata)
 
-    # Attach @kubernetes and @environment decorator to the flow to
-    # ensure that the related decorator hooks are invoked.
+    # Attach @kubernetes.
     decorators._attach_decorators(
-        obj.flow, [KubernetesDecorator.name, EnvironmentDecorator.name]
+        obj.flow, [KubernetesDecorator.name]
     )
 
     decorators._init_step_decorators(
