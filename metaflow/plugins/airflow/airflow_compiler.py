@@ -22,7 +22,7 @@ from metaflow.metaflow_config import (
     KUBERNETES_SERVICE_ACCOUNT,
 )
 from metaflow.parameters import deploy_time_eval
-from metaflow.plugins.aws.eks.kubernetes import Kubernetes, sanitize_label_value
+from metaflow.plugins.kubernetes.kubernetes import Kubernetes
 from metaflow.plugins.cards.card_modules import chevron
 from metaflow.plugins.timeout_decorator import get_run_time_limit_for_task
 from metaflow.util import dict_to_cli_options, get_username
@@ -73,22 +73,15 @@ def create_k8s_args(
 ):
 
     k8s = Kubernetes(
-        datastore, metadata, environment, flow_name, run_id, step_name, task_id, attempt
+        datastore, metadata, environment
     )
     labels = {
         "app": "metaflow",
-        "metaflow/flow_name": sanitize_label_value(flow_name),
-        "metaflow/step_name": sanitize_label_value(step_name),
         "app.kubernetes.io/name": "metaflow-task",
         "app.kubernetes.io/part-of": "metaflow",
-        "app.kubernetes.io/created-by": sanitize_label_value(user),
+        "app.kubernetes.io/created-by": user,
     }
-    # Add Metaflow system tags as labels as well!
-    for sys_tag in metadata.sticky_sys_tags:
-        labels["metaflow/%s" % sys_tag[: sys_tag.index(":")]] = sanitize_label_value(
-            sys_tag[sys_tag.index(":") + 1 :]
-        )
-
+    
     additional_mf_variables = {
         "METAFLOW_CODE_SHA": code_package_sha,
         "METAFLOW_CODE_URL": code_package_url,
@@ -113,8 +106,9 @@ def create_k8s_args(
         else service_account,
         node_selector=node_selector,
         cmds=k8s._command(
-            code_package_url=code_package_url,
-            step_cmds=step_cli,
+            flow_name, run_id, step_name, task_id, attempt,
+            code_package_url,
+            step_cli,
         ),
         in_cluster=True,
         image=docker_image,
