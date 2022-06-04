@@ -47,7 +47,7 @@ class SensorNames:
         return list(cls.__dict__.values())
 
 
-# TODO: This can be removed. See how labels/annotations are handled in Metaflow today.
+# TODO : (savin-comments)  This can be removed. See how labels/annotations are handled in Metaflow today.
 def sanitize_label_value(val):
     # Label sanitization: if the value can be used as is, return it as is.
     # If it can't, sanitize and add a suffix based on hash of the original
@@ -83,6 +83,7 @@ def json_dump(val):
     return json.dumps(val)
 
 
+# TODO : (savin-comments) Fix serialization of args : 
 class AirflowDAGArgs(object):
     # _arg_types This object helps map types of
     # different keys that need to be parsed. None of the "values" in this
@@ -131,7 +132,7 @@ class AirflowDAGArgs(object):
         self._args = kwargs
 
     @property
-    def arguements(self): # TODO: Fix spelling
+    def arguments(self):
         return dict(**self._args, **self.metaflow_specific_args)
 
     # just serialize?
@@ -182,7 +183,7 @@ class AirflowDAGArgs(object):
         dd = self._serialize_args()
         return dd
 
-# TODO: This shouldn't be strictly needed?
+# TODO : (savin-comments) This shouldn't be strictly needed?
 def generate_rfc1123_name(flow_name, step_name):
     """
     Generate RFC 1123 compatible name. Specifically, the format is:
@@ -205,36 +206,28 @@ def generate_rfc1123_name(flow_name, step_name):
     # the name has to be under 63 chars total
     return sanitized_long_name[:57] + "-" + hash[:5]
 
-# better name - _kubernetes_pod_operator_args
-# also, the output of this method is something that we should be able to generate
-# statically on the user's workstation and not on Airflow server. basically - we can
-# massage operator_args in the correct format before writing them out to the DAG file.
-# that has a great side-effect of allowing us to eye-ball the results in the DAG file
-# and not rely on more on-the-fly transformations.
-def set_k8s_operator_args(flow_name, step_name, operator_args):
+def _kubernetes_pod_operator_args(flow_name, step_name, operator_args):
     from kubernetes import client
+    
     from airflow.kubernetes.secret import Secret
-
-    task_id = AIRFLOW_TASK_ID_TEMPLATE_VALUE
-    run_id = "%s-{{ [run_id, dag_run.dag_id] | run_id_creator }}" % RUN_ID_PREFIX  # run_id_creator is added via the `user_defined_filters`
-    attempt = "{{ task_instance.try_number - 1 }}"
     # Set dynamic env variables like run-id, task-id etc from here.
-    env_vars = (
-        [
-            client.V1EnvVar(name=v["name"], value=str(v["value"]))
-            for v in operator_args.get("env_vars", [])
-        ]
-        + [
-            client.V1EnvVar(name=k, value=str(v))
-            for k, v in dict(
-                METAFLOW_RUN_ID=run_id,
-                METAFLOW_AIRFLOW_TASK_ID=task_id,
-                METAFLOW_AIRFLOW_DAG_RUN_ID="{{run_id}}",
-                METAFLOW_AIRFLOW_JOB_ID="{{ti.job_id}}",
-                METAFLOW_ATTEMPT_NUMBER=attempt,
-            ).items()
-        ]
-        + [
+    secrets = [
+        Secret("env", secret, secret) for secret in operator_args.get("secrets", [])
+    ]
+    args = operator_args
+    args.update({
+        # TODO : (savin-comments) : we should be able to have a cleaner name - take a look at the argo implementation
+        "name": generate_rfc1123_name(flow_name, step_name),
+        "secrets": secrets,        
+        # Question for (savin): 
+            # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user? 
+        
+        # todo :annotations are not empty. see @kubernetes or argo-workflows
+        "annotations": {},
+
+    })
+    # Below cannot be passed in dictionary form. After trying a few times it didin't work.
+    additional_env_vars = [
             client.V1EnvVar(
                 name=k,
                 value_from=client.V1EnvVarSource(
@@ -245,91 +238,17 @@ def set_k8s_operator_args(flow_name, step_name, operator_args):
                 "METAFLOW_KUBERNETES_POD_NAMESPACE": "metadata.namespace",
                 "METAFLOW_KUBERNETES_POD_NAME": "metadata.name",
                 "METAFLOW_KUBERNETES_POD_ID": "metadata.uid",
-                "METAFLOW_KUBERNETES_SERVICE_ACCOUNT_NAME": "spec.serviceAccountName",
             }.items()
         ]
+    args["env_vars"] = [client.V1EnvVar(name=x["name"],value=x["value"]) for x in args["env_vars"]] + additional_env_vars
+    
+    # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries 
+    # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via 
+    # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function
+    resources = args.get("resources")
+    args["resources"] = client.V1ResourceRequirements(
+        requests = resources['requests'],
     )
-
-    labels = {
-        "metaflow/attempt": attempt,
-        "metaflow/run_id": run_id,
-        "metaflow/task_id": task_id,
-    }
-    # We don't support volumes at the moment for `@kubernetes`
-    volume_mounts = [
-        client.V1VolumeMount(**v) for v in operator_args.get("volume_mounts", [])
-    ]
-    volumes = [client.V1Volume(**v) for v in operator_args.get("volumes", [])]
-    secrets = [
-        Secret("env", secret, secret) for secret in operator_args.get("secrets", [])
-    ]
-    args = {
-        # "on_retry_callback": retry_callback,
-        # use the default namespace even no namespace is defined rather than airflow
-        "namespace": operator_args.get("namespace", "airflow"),
-        # image is always available - no need for a fallback
-        "image": operator_args.get("image", "python"),
-        # we should be able to have a cleaner name - take a look at the argo implementation
-        "name": generate_rfc1123_name(flow_name, step_name),
-        "task_id": step_name,
-        # do we need to specify args that are None? can we just rely on the system
-        # defaults for such args?
-        "random_name_suffix": None,
-        "cmds": operator_args.get("cmds", []),
-        "arguments": operator_args.get("arguments", []),
-        # do we use ports?
-        "ports": operator_args.get("ports", []),
-        # do we use volume mounts?
-        "volume_mounts": volume_mounts,
-        # do we use volumes?
-        "volumes": volumes,
-        "env_vars": env_vars,
-        # how are the values for env_from computed?
-        "env_from": operator_args.get("env_from", []),
-        "secrets": secrets,
-        # will this ever be false?
-        "in_cluster": operator_args.get(
-            "in_cluster", True  #  run kubernetes client with in_cluster configuration.
-        ),
-        "labels": operator_args.get("labels", {}),
-        "reattach_on_restart": False,
-        # is there a default value we can rely on? we would ideally like the sys-admin
-        # to be able to set these values inside their airflow deployment
-        "startup_timeout_seconds": 120,
-        "get_logs": True,  # This needs to be set to True to ensure that doesn't error out looking for xcom
-        # we should use the default image pull policy
-        "image_pull_policy": None,
-        # annotations are not empty. see @kubernetes or argo-workflows
-        "annotations": {},
-        "resources": client.V1ResourceRequirements(
-            # need to support disk and gpus - also the defaults don't match up to
-            # the expected values. let's avoid adding defaults ourselves where we can.
-            requests={
-                "cpu": operator_args.get("cpu", 1),
-                "memory": operator_args.get("memory", "2000M"),
-            }
-        ),  # kubernetes.client.models.v1_resource_requirements.V1ResourceRequirements
-        "retries": operator_args.get("retries", 0),  # Base operator command
-        
-        "retry_exponential_backoff": False,  # todo : should this be a arg we allow on CLI. not right now - there is an open ticket for this - maybe at some point we will.
-        "affinity": None,  # kubernetes.client.models.v1_affinity.V1Affinity
-        "config_file": None,
-        # image_pull_secrets : typing.Union[typing.List[kubernetes.client.models.v1_local_object_reference.V1LocalObjectReference], NoneType],
-        "image_pull_secrets": operator_args.get("image_pull_secrets", []),
-        "service_account_name": operator_args.get(  # Service account names can be essential for passing reference to IAM roles etc.
-            "service_account_name", None
-        ),
-        # let's rely on the default values
-        "is_delete_operator_pod": operator_args.get(
-            "is_delete_operator_pod", False
-        ),  # if set to true will delete the pod once finished /failed execution. By default it is true
-        # let's rely on the default values
-        "hostnetwork": False,  # If True enable host networking on the pod.
-        "security_context": {},
-        "log_events_on_failure": True,
-        "do_xcom_push": True,
-    }
-    args["labels"].update(labels)
     if operator_args.get("execution_timeout", None):
         args["execution_timeout"] = timedelta(
             **operator_args.get(
@@ -339,28 +258,6 @@ def set_k8s_operator_args(flow_name, step_name, operator_args):
     if operator_args.get("retry_delay", None):
         args["retry_delay"] = timedelta(**operator_args.get("retry_delay"))
     return args
-
-# why do we need a separate method for this function? can we just embed the logic in
-# _kubernetes_task?
-def get_k8s_operator():
-
-    try:
-        from airflow.contrib.operators.kubernetes_pod_operator import (
-            KubernetesPodOperator,
-        )
-    except ImportError:
-        try:
-            from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import (
-                KubernetesPodOperator,
-            )
-        except ImportError as e:
-            raise KubernetesProviderNotFound(
-                "This DAG requires a `KubernetesPodOperator`. "
-                "Install the Airflow Kubernetes provider using : "
-                "`pip install apache-airflow-providers-cncf-kubernetes`"
-            )
-
-    return KubernetesPodOperator
 
 
 def _parse_sensor_args(name, kwargs):
@@ -438,8 +335,22 @@ class AirflowTask(object):
         ).set_operator_args(**op_args)
 
     def _kubenetes_task(self):
-        KubernetesPodOperator = get_k8s_operator()
-        k8s_args = set_k8s_operator_args(
+        try:
+            from airflow.contrib.operators.kubernetes_pod_operator import (
+                KubernetesPodOperator,
+            )
+        except ImportError:
+            try:
+                from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import (
+                    KubernetesPodOperator,
+                )
+            except ImportError as e:
+                raise KubernetesProviderNotFound(
+                    "This DAG requires a `KubernetesPodOperator`. "
+                    "Install the Airflow Kubernetes provider using : "
+                    "`pip install apache-airflow-providers-cncf-kubernetes`"
+                )
+        k8s_args = _kubernetes_pod_operator_args(
             self._flow_name, self.name, self._operator_args
         )
         return KubernetesPodOperator(**k8s_args)
@@ -491,7 +402,7 @@ class Workflow(object):
         for sd in data_dict["states"].values():
             re_cls.add_state(
                 AirflowTask.from_dict(
-                    sd, flow_name=re_cls._dag_instantiation_params.arguements["dag_id"]
+                    sd, flow_name=re_cls._dag_instantiation_params.arguments["dag_id"]
                 )
             )
         re_cls.set_parameters(data_dict["metaflow_params"])
@@ -521,7 +432,7 @@ class Workflow(object):
         # DAG Params can be seen here :
         # https://airflow.apache.org/docs/apache-airflow/2.0.0/_api/airflow/models/dag/index.html#airflow.models.dag.DAG
         # Airflow 2.0.0 Allows setting Params.
-        dag = DAG(params=params_dict, **self._dag_instantiation_params.arguements)
+        dag = DAG(params=params_dict, **self._dag_instantiation_params.arguments)
         dag.fileloc = self._file_path if self._file_path is not None else dag.fileloc
 
         def add_node(node, parents, dag):
