@@ -195,6 +195,7 @@ def _kubernetes_pod_operator_args(flow_name, step_name, operator_args):
             "METAFLOW_KUBERNETES_POD_NAMESPACE": "metadata.namespace",
             "METAFLOW_KUBERNETES_POD_NAME": "metadata.name",
             "METAFLOW_KUBERNETES_POD_ID": "metadata.uid",
+            "METAFLOW_KUBERNETES_SERVICE_ACCOUNT_NAME": "spec.serviceAccountName",
         }.items()
     ]
     args["env_vars"] = [
