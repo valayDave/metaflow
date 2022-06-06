@@ -4,7 +4,6 @@ import os
 import random
 import string
 import sys
-from collections import defaultdict
 from datetime import datetime, timedelta
 
 import metaflow.util as util
@@ -28,7 +27,8 @@ from metaflow.util import dict_to_cli_options, get_username, compress_list
 from metaflow.parameters import JSONTypeClass
 
 from . import airflow_utils
-from .airflow_decorator import SUPPORTED_SENSORS, AirflowSensorDecorator
+from .exception import AirflowException
+from .sensors import SUPPORTED_SENSORS
 from .airflow_utils import (
     AIRFLOW_TASK_ID_TEMPLATE_VALUE,
     RUN_ID_LEN,
@@ -39,17 +39,6 @@ from .airflow_utils import (
 )
 
 AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "dag.py")
-
-
-class AirflowException(MetaflowException):
-    headline = "Airflow Exception"
-
-    def __init__(self, msg):
-        super().__init__(msg)
-
-
-class NotSupportedException(MetaflowException):
-    headline = "Not yet supported with Airflow"
 
 
 class Airflow(object):
@@ -233,9 +222,18 @@ class Airflow(object):
         self,
         step_names,
     ):
-        return compress_list([self._make_input_path(s) for s in step_names])
+        """
+        This function is meant to compress the input paths and it specifically doesn't use
+        `metaflow.util.compress_list` under the hood. The reason is because the `self.run_id` is a complicated macro string
+        that doesn't behave nicely with `metaflow.util.decompress_list` since the `decompress_util`
+        function expects a string which doesn't contain any delimiter characters and the run-id string does.
+        Hence we have a custom compression string created via `_make_input_path_compressed` function instead of `compress_list`.
+        """
+        return "%s:" % (self.run_id) + ",".join(
+            self._make_input_path(s, only_task_id=True) for s in step_names
+        )
 
-    def _make_input_path(self, step_name):
+    def _make_input_path(self, step_name, only_task_id=False):
         # This is set using the `airflow_internal` decorator.
         # This will pull the `return_value` xcom which holds a dictionary.
         # This helps pass state.
@@ -244,6 +242,9 @@ class Airflow(object):
             step_name,
             TASK_ID_XCOM_KEY,
         )
+
+        if only_task_id:
+            return task_id_string
 
         return "%s%s" % (self.run_id, task_id_string)
 
