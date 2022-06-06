@@ -7,7 +7,8 @@ from metaflow.package import MetaflowPackage
 from metaflow.plugins import EnvironmentDecorator, KubernetesDecorator
 from metaflow.util import get_username
 
-from .airflow import Airflow, AirflowException, NotSupportedException
+from .airflow import Airflow
+from .exception import AirflowException, NotSupportedException
 
 VALID_NAME = re.compile("[^a-zA-Z0-9_\-\.]")
 
