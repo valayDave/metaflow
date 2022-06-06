@@ -164,30 +164,6 @@ class AirflowDAGArgs(object):
         return dd
 
 
-# TODO : (savin-comments) This shouldn't be strictly needed?
-def generate_rfc1123_name(flow_name, step_name):
-    """
-    Generate RFC 1123 compatible name. Specifically, the format is:
-        <let-or-digit>[*[<let-or-digit-or-hyphen>]<let-or-digit>]
-
-    The generated name consists from a human-readable prefix, derived from
-    flow/step/task/attempt, and a hash suffux.
-    """
-    unique_str = "%s-%d" % (str(time.time()), random.randint(0, 1000))
-
-    long_name = "-".join([flow_name, step_name, unique_str])
-    hash = hashlib.sha256(long_name.encode("utf-8")).hexdigest()
-
-    if long_name.startswith("_"):
-        # RFC 1123 names can't start with hyphen so slap an extra prefix on it
-        sanitized_long_name = "u" + long_name.replace("_", "-").lower()
-    else:
-        sanitized_long_name = long_name.replace("_", "-").lower()
-
-    # the name has to be under 63 chars total
-    return sanitized_long_name[:57] + "-" + hash[:5]
-
-
 def _kubernetes_pod_operator_args(flow_name, step_name, operator_args):
     from kubernetes import client
 
