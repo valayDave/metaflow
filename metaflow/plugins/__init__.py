@@ -158,10 +158,13 @@ from .aws.step_functions.schedule_decorator import ScheduleDecorator
 from .project_decorator import ProjectDecorator
 
 from .airflow.airflow_decorator import (
+    AirflowScheduleIntervalDecorator,
+)
+
+from .airflow.sensors import (
     S3KeySensorDecorator,
     SQLSensorDecorator,
     ExternalTaskSensorDecorator,
-    AirflowScheduleIntervalDecorator,
 )
 
 FLOW_DECORATORS = [CondaFlowDecorator, ScheduleDecorator, ProjectDecorator] + [
