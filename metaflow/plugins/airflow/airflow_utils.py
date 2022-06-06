@@ -47,26 +47,6 @@ class SensorNames:
         return list(cls.__dict__.values())
 
 
-# TODO : (savin-comments)  This can be removed. See how labels/annotations are handled in Metaflow today.
-def sanitize_label_value(val):
-    # Label sanitization: if the value can be used as is, return it as is.
-    # If it can't, sanitize and add a suffix based on hash of the original
-    # value, replace invalid chars and truncate.
-    #
-    # The idea here is that even if there are non-allowed chars in the same
-    # position, this function will likely return distinct values, so you can
-    # still filter on those. For example, "alice$" and "alice&" will be
-    # sanitized into different values "alice_b3f201" and "alice_2a6f13".
-    if val == "" or LABEL_VALUE_REGEX.match(val):
-        return val
-    hash = hashlib.sha256(val.encode("utf-8")).hexdigest()
-
-    # Replace invalid chars with dots, and if the first char is
-    # non-alphahanumeric, replace it with 'u' to make it valid
-    sanitized_val = re.sub("^[^A-Z0-9a-z]", "u", re.sub(r"[^A-Za-z0-9.\-_]", "_", val))
-    return sanitized_val[:57] + "-" + hash[:5]
-
-
 def run_id_creator(val):
     # join `[dag-id,run-id]` of airflow dag.
     return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:RUN_ID_LEN]
