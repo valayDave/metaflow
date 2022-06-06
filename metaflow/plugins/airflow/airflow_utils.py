@@ -220,8 +220,6 @@ def _kubernetes_pod_operator_args(flow_name, step_name, operator_args):
     args = operator_args
     args.update(
         {
-            # TODO : (savin-comments) : we should be able to have a cleaner name - take a look at the argo implementation
-            "name": generate_rfc1123_name(flow_name, step_name),
             "secrets": secrets,
             # Question for (savin):
             # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user?
