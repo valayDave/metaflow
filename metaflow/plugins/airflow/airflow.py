@@ -378,7 +378,29 @@ class Airflow(object):
             if k8s_deco.attributes["namespace"] is not None
             else "default"
         )
+
+        resources = dict(
+            requests={
+                "cpu": k8s_deco.attributes["cpu"],
+                "memory": "%sM" % str(k8s_deco.attributes["memory"]),
+                "ephemeral-storage": str(k8s_deco.attributes["disk"]),
+            }
+        )
+        if k8s_deco.attributes["gpu"] is not None:
+            resources.update(
+                dict(
+                    limits={
+                        "%s.com/gpu".lower()
+                        % k8s_deco.attributes["gpu_vendor"]: str(
+                            k8s_deco.attributes["gpu"]
+                        )
+                    }
+                )
+            )
+
         k8s_operator_args = dict(
+            # like argo workflows we use step_name as name of container
+            name=node.name,
             namespace=k8s_namespace,
             service_account_name=service_account,
             node_selector=k8s_deco.attributes["node_selector"],
@@ -394,14 +416,7 @@ class Airflow(object):
                 ),
             ),
             image=k8s_deco.attributes["image"],
-            # TODO : (savin-comments) add gpu support with limits
-            resources=dict(
-                requests={
-                    "cpu": k8s_deco.attributes["cpu"],
-                    "memory": "%sM" % str(k8s_deco.attributes["memory"]),
-                    "ephemeral-storage": str(k8s_deco.attributes["disk"]),
-                }
-            ),
+            resources=resources,
             execution_timeout=dict(seconds=runtime_limit),
             retries=user_code_retries,
             env_vars=[dict(name=k, value=v) for k, v in env.items()],
