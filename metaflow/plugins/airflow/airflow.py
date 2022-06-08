@@ -77,6 +77,7 @@ class Airflow(object):
         worker_pool=None,
         description=None,
         file_path=None,
+        workflow_timeout=None,
         is_paused_upon_creation=True,
     ):
         self.name = name
@@ -100,6 +101,7 @@ class Airflow(object):
         _, self.graph_structure = self.graph.output_steps()
         self.worker_pool = worker_pool
         self.is_paused_upon_creation = is_paused_upon_creation
+        self.workflow_timeout = workflow_timeout
         self._set_scheduling_interval()
 
     def _set_scheduling_interval(self):
@@ -593,6 +595,8 @@ class Airflow(object):
             {} if self.max_workers is None else dict(max_active_tasks=self.max_workers)
         )
         airflow_dag_args["is_paused_upon_creation"] = self.is_paused_upon_creation
+        if self.workflow_timeout is not None:
+            airflow_dag_args["dagrun_timeout"] = self.workflow_timeout
 
         appending_sensors = self._collect_flow_sensors()
         workflow = Workflow(

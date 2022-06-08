@@ -79,6 +79,7 @@ class AirflowDAGArgs(object):
         "start_date": datetime.now(),
         "catchup": False,
         "tags": [],
+        "dagrun_timeout": 100,
         "max_retry_delay": "",
         "dagrun_timeout": timedelta(minutes=60 * 4),
         "default_args": {

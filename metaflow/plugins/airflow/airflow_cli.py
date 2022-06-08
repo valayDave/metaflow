@@ -63,13 +63,12 @@ def airflow(obj, name=None):
     show_default=True,
     help="Maximum number of parallel processes.",
 )
-# TODO: Enable workflow timeout.
-# @click.option(
-#     "--workflow-timeout",
-#     default=None,
-#     type=int,
-#     help="Workflow timeout in seconds. Enforced only for scheduled DAGs.",
-# )
+@click.option(
+    "--workflow-timeout",
+    default=None,
+    type=int,
+    help="Workflow timeout in seconds. Enforced only for scheduled DAGs.",
+)
 @click.option(
     "--worker-pool",
     default=None,
@@ -123,7 +122,7 @@ def make_flow(
     file,
 ):
     # Validate if the workflow is correctly parsed.
-    # _validate_workflow(obj.flow, obj.graph, obj.flow_datastore, obj.metadata)
+    _validate_workflow(obj.flow, obj.graph, obj.flow_datastore, obj.metadata)
 
     # Attach @kubernetes.
     decorators._attach_decorators(obj.flow, [KubernetesDecorator.name])
@@ -157,7 +156,7 @@ def make_flow(
         username=get_username(),
         max_workers=max_workers,
         worker_pool=worker_pool,
-        # workflow_timeout=workflow_timeout,
+        workflow_timeout=workflow_timeout,
         description=obj.flow.__doc__,
         file_path=file,
         is_paused_upon_creation=is_paused_upon_creation,
