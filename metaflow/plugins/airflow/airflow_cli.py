@@ -167,15 +167,6 @@ def make_flow(
 def _validate_workflow(flow, graph, flow_datastore, metadata):
     # check for other compute related decorators.
     # supported compute : k8s (v1), local(v2), batch(v3),
-    # todo : check for the flow level decorators are correctly set.
-    # TODO: Move the check to the decorator
-    schedule_interval = flow._flow_decorators.get("airflow_schedule_interval")
-    schedule = flow._flow_decorators.get("schedule")
-    if schedule is not None and schedule_interval is not None:
-        raise AirflowException(
-            "Flow cannot have @schedule and @airflow_schedule_interval at the same time. Use any one."
-        )
-    # This check can be handled by airflow.py
     for node in graph:
         if node.type == "foreach":
             raise NotSupportedException(
