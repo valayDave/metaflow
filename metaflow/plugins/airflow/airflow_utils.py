@@ -63,7 +63,6 @@ def json_dump(val):
     return json.dumps(val)
 
 
-# TODO : (savin-comments) Fix serialization of args :
 class AirflowDAGArgs(object):
 
     # `_arg_types` is a dictionary which represents the types of the arguments of an Airflow `DAG`.
@@ -76,7 +75,6 @@ class AirflowDAGArgs(object):
         "start_date": datetime,
         "catchup": bool,
         "tags": list,
-        "dagrun_timeout": int,
         "dagrun_timeout": timedelta,
         "default_args": {
             "owner": str,

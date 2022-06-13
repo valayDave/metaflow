@@ -611,8 +611,10 @@ class Airflow(object):
             {} if self.max_workers is None else dict(max_active_tasks=self.max_workers)
         )
         airflow_dag_args["is_paused_upon_creation"] = self.is_paused_upon_creation
-        if self.workflow_timeout is not None:
-            airflow_dag_args["dagrun_timeout"] = self.workflow_timeout
+
+        # workflow timeout should only be enforced if a dag is scheduled.
+        if self.workflow_timeout is not None and self.schedule_interval is not None:
+            airflow_dag_args["dagrun_timeout"] = dict(seconds=self.workflow_timeout)
 
         appending_sensors = self._collect_flow_sensors()
         workflow = Workflow(
