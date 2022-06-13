@@ -65,64 +65,57 @@ def json_dump(val):
 
 # TODO : (savin-comments) Fix serialization of args :
 class AirflowDAGArgs(object):
-    # _arg_types This object helps map types of
-    # different keys that need to be parsed. None of the "values" in this
-    # dictionary are being used. But the "types" of the values of are used when
-    # reparsing the arguments from the config variable.
 
-    # TODO: These values are being overriden in airflow.py. Can we list the
-    #       sensible defaults directly here so that it is easier to grok the code.
+    # `_arg_types` is a dictionary which represents the types of the arguments of an Airflow `DAG`.
+    # `_arg_types` is used when parsing types back from the configuration json.
+    # It doesn't cover all the arguments but covers many of the important one which can come from the cli.
     _arg_types = {
-        "dag_id": "asdf",
-        "description": "asdfasf",
-        "schedule_interval": "*/2 * * * *",
-        "start_date": datetime.now(),
-        "catchup": False,
-        "tags": [],
-        "dagrun_timeout": 100,
-        "max_retry_delay": "",
-        "dagrun_timeout": timedelta(minutes=60 * 4),
+        "dag_id": str,
+        "description": str,
+        "schedule_interval": str,
+        "start_date": datetime,
+        "catchup": bool,
+        "tags": list,
+        "dagrun_timeout": int,
+        "dagrun_timeout": timedelta,
         "default_args": {
-            "owner": "some_username",
-            "depends_on_past": False,
-            "email": ["some_email"],
-            "email_on_failure": False,
-            "email_on_retry": False,
-            "retries": 1,
-            "retry_delay": timedelta(seconds=10),
-            "queue": "bash_queue",  #  which queue to target when running this job. Not all executors implement queue management, the CeleryExecutor does support targeting specific queues.
-            "pool": "backfill",  # the slot pool this task should run in, slot pools are a way to limit concurrency for certain tasks
-            "priority_weight": 10,
-            "wait_for_downstream": False,
-            "sla": timedelta(hours=2),
-            "execution_timeout": timedelta(minutes=10),
-            "trigger_rule": "all_success",
+            "owner": str,
+            "depends_on_past": bool,
+            "email": list,
+            "email_on_failure": bool,
+            "email_on_retry": bool,
+            "retries": int,
+            "retry_delay": timedelta,
+            "queue": str,  #  which queue to target when running this job. Not all executors implement queue management, the CeleryExecutor does support targeting specific queues.
+            "pool": str,  # the slot pool this task should run in, slot pools are a way to limit concurrency for certain tasks
+            "priority_weight": int,
+            "wait_for_downstream": bool,
+            "sla": timedelta,
+            "execution_timeout": timedelta,
+            "trigger_rule": str,
         },
     }
 
-    metaflow_specific_args = {
-        # Reference for user_defined_filters : https://stackoverflow.com/a/70175317
-        "user_defined_filters": dict(
-            task_id_creator=lambda v: task_id_creator(v),
-            json_dump=lambda val: json_dump(val),
-            run_id_creator=lambda val: run_id_creator(val),
-        ),
-    }
+    # Reference for user_defined_filters : https://stackoverflow.com/a/70175317
+    filters = dict(
+        task_id_creator=lambda v: task_id_creator(v),
+        json_dump=lambda val: json_dump(val),
+        run_id_creator=lambda val: run_id_creator(val),
+    )
 
     def __init__(self, **kwargs):
         self._args = kwargs
 
     @property
     def arguments(self):
-        return dict(**self._args, **self.metaflow_specific_args)
+        return dict(**self._args, user_defined_filters=self.filters)
 
-    # just serialize?
-    def _serialize_args(self):
+    def serialize(self):
         def parse_args(dd):
             data_dict = {}
             for k, v in dd.items():
                 # see the comment below for `from_dict`
-                if k == "default_args":
+                if isinstance(v, dict):
                     data_dict[k] = parse_args(v)
                 elif isinstance(v, datetime):
                     data_dict[k] = v.isoformat()
@@ -134,23 +127,19 @@ class AirflowDAGArgs(object):
 
         return parse_args(self._args)
 
-    # just deserialize?
     @classmethod
-    def from_dict(cls, data_dict):
+    def deserialize(cls, data_dict):
         def parse_args(dd, type_check_dict):
             kwrgs = {}
             for k, v in dd.items():
                 if k not in type_check_dict:
                     kwrgs[k] = v
                     continue
-                # wouldn't you want to do this parsing for any type of nested structure
-                # that is not datetime or timedelta? that should remove the reliance on
-                # the magic word - default_args
-                if k == "default_args":
+                if isinstance(v, dict) and isinstance(type_check_dict[k], dict):
                     kwrgs[k] = parse_args(v, type_check_dict[k])
-                elif isinstance(type_check_dict[k], datetime):
+                elif type_check_dict[k] == datetime:
                     kwrgs[k] = datetime.fromisoformat(v)
-                elif isinstance(type_check_dict[k], timedelta):
+                elif type_check_dict[k] == timedelta:
                     kwrgs[k] = timedelta(**v)
                 else:
                     kwrgs[k] = v
@@ -158,14 +147,8 @@ class AirflowDAGArgs(object):
 
         return cls(**parse_args(data_dict, cls._arg_types))
 
-    def to_dict(self):
-        # dd is quite cryptic. why not just return self._serialize? also do we even need
-        # this method? how about we just use `serialize`?
-        dd = self._serialize_args()
-        return dd
 
-
-def _kubernetes_pod_operator_args(flow_name, step_name, operator_args):
+def _kubernetes_pod_operator_args(operator_args):
     from kubernetes import client
 
     from airflow.kubernetes.secret import Secret
@@ -180,8 +163,6 @@ def _kubernetes_pod_operator_args(flow_name, step_name, operator_args):
             "secrets": secrets,
             # Question for (savin):
             # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user?
-            # todo :annotations are not empty. see @kubernetes or argo-workflows
-            "annotations": {},
         }
     )
     # Below cannot be passed in dictionary form. After trying a few times it didin't work.
@@ -311,9 +292,7 @@ class AirflowTask(object):
                     "Install the Airflow Kubernetes provider using : "
                     "`pip install apache-airflow-providers-cncf-kubernetes`"
                 )
-        k8s_args = _kubernetes_pod_operator_args(
-            self._flow_name, self.name, self._operator_args
-        )
+        k8s_args = _kubernetes_pod_operator_args(self._operator_args)
         return KubernetesPodOperator(**k8s_args)
 
     def to_task(self):
@@ -342,7 +321,7 @@ class Workflow(object):
         return dict(
             graph_structure=self.graph_structure,
             states={s: v.to_dict() for s, v in self.states.items()},
-            dag_instantiation_params=self._dag_instantiation_params.to_dict(),
+            dag_instantiation_params=self._dag_instantiation_params.serialize(),
             file_path=self._file_path,
             metaflow_params=self.metaflow_params,
         )
@@ -356,7 +335,7 @@ class Workflow(object):
             file_path=data_dict["file_path"],
             graph_structure=data_dict["graph_structure"],
         )
-        re_cls._dag_instantiation_params = AirflowDAGArgs.from_dict(
+        re_cls._dag_instantiation_params = AirflowDAGArgs.deserialize(
             data_dict["dag_instantiation_params"]
         )
 
