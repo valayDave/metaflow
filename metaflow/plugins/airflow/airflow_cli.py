@@ -163,7 +163,6 @@ def make_flow(
     )
 
 
-# TODO: Clean this out
 def _validate_workflow(flow, graph, flow_datastore, metadata):
     # check for other compute related decorators.
     # supported compute : k8s (v1), local(v2), batch(v3),
