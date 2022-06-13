@@ -5,6 +5,7 @@ from datetime import timedelta
 
 from metaflow.decorators import FlowDecorator, StepDecorator
 from metaflow.metadata import MetaDatum
+from .exception import AirflowException
 
 from .airflow_utils import TASK_ID_XCOM_KEY, AirflowTask, SensorNames
 
@@ -54,6 +55,13 @@ class AirflowScheduleIntervalDecorator(FlowDecorator):
     def flow_init(
         self, flow, graph, environment, flow_datastore, metadata, logger, echo, options
     ):
+        schedule_interval = flow._flow_decorators.get("airflow_schedule_interval")
+        schedule = flow._flow_decorators.get("schedule")
+        if schedule is not None and schedule_interval is not None:
+            raise AirflowException(
+                "Flow cannot have @schedule and @airflow_schedule_interval at the same time. Use any one."
+            )
+
         self._option_values = options
 
         if self._option_values["schedule"]:
