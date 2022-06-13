@@ -37,6 +37,7 @@ from .airflow_utils import (
     AirflowTask,
     Workflow,
 )
+from metaflow import current
 
 AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "dag.py")
 
@@ -77,6 +78,7 @@ class Airflow(object):
         worker_pool=None,
         description=None,
         file_path=None,
+        workflow_timeout=None,
         is_paused_upon_creation=True,
     ):
         self.name = name
@@ -100,6 +102,7 @@ class Airflow(object):
         _, self.graph_structure = self.graph.output_steps()
         self.worker_pool = worker_pool
         self.is_paused_upon_creation = is_paused_upon_creation
+        self.workflow_timeout = workflow_timeout
         self._set_scheduling_interval()
 
     def _set_scheduling_interval(self):
@@ -398,6 +401,20 @@ class Airflow(object):
                 )
             )
 
+        annotations = {
+            "metaflow/owner": self.username,
+            "metaflow/user": self.username,
+            "metaflow/flow_name": self.flow.name,
+        }
+        if current.get("project_name"):
+            annotations.update(
+                {
+                    "metaflow/project_name": current.project_name,
+                    "metaflow/branch_name": current.branch_name,
+                    "metaflow/project_flow_name": current.project_flow_name,
+                }
+            )
+
         k8s_operator_args = dict(
             # like argo workflows we use step_name as name of container
             name=node.name,
@@ -415,6 +432,7 @@ class Airflow(object):
                     node, input_paths, self.code_package_url, user_code_retries
                 ),
             ),
+            annotations=annotations,
             image=k8s_deco.attributes["image"],
             resources=resources,
             execution_timeout=dict(seconds=runtime_limit),
@@ -593,6 +611,10 @@ class Airflow(object):
             {} if self.max_workers is None else dict(max_active_tasks=self.max_workers)
         )
         airflow_dag_args["is_paused_upon_creation"] = self.is_paused_upon_creation
+
+        # workflow timeout should only be enforced if a dag is scheduled.
+        if self.workflow_timeout is not None and self.schedule_interval is not None:
+            airflow_dag_args["dagrun_timeout"] = dict(seconds=self.workflow_timeout)
 
         appending_sensors = self._collect_flow_sensors()
         workflow = Workflow(

@@ -1,6 +1,7 @@
+import uuid
 from metaflow.decorators import FlowDecorator
 from ..exception import AirflowException
-from ..airflow_utils import AirflowTask
+from ..airflow_utils import AirflowTask, task_id_creator
 
 
 class AirflowSensorDecorator(FlowDecorator):
@@ -25,9 +26,9 @@ class AirflowSensorDecorator(FlowDecorator):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # TODO : (savin-comments) : refactor the name of `self._task_name` to have a common name.
         # Is the task is task name a metaflow task?
-        self._task_name = self.operator_type
+        self._airflow_task_name = None
+        self._id = str(uuid.uuid4())
 
     def serialize_operator_args(self):
         """
@@ -45,7 +46,7 @@ class AirflowSensorDecorator(FlowDecorator):
     def create_task(self):
         task_args = self.serialize_operator_args()
         return AirflowTask(
-            self._task_name,
+            self._airflow_task_name,
             operator_type=self.operator_type,
         ).set_operator_args(**{k: v for k, v in task_args.items() if v is not None})
 
@@ -54,27 +55,20 @@ class AirflowSensorDecorator(FlowDecorator):
         compile the arguments for `airflow create` command.
         This will even check if the arguments are acceptible.
         """
-        # If there are more than one sensor decorators then ensure that `name` is set
-        # so that we can have uniqueness of `task_id` when creating tasks on airflow.
-        sensor_decorators = [
-            d
-            for d in self._flow_decorators
-            if issubclass(d.__class__, AirflowSensorDecorator)
-        ]
-        sensor_deco_types = {}
-        for d in sensor_decorators:
-            if d.__class__.__name__ not in sensor_deco_types:
-                sensor_deco_types[d.__class__.__name__] = []
-            sensor_deco_types[d.__class__.__name__].append(d)
-        # If there are more than one decorator per sensor-type then we require the name argument.
-        if sum([len(v) for v in sensor_deco_types.values()]) > len(sensor_deco_types):
-            if self.attributes["name"] is None:
-                # TODO : (savin-comments)  autogenerate this name
-                raise AirflowException(
-                    "`name` argument cannot be `None` when multiple Airflow Sensor related decorators are attached to a flow."
-                )
-        if self.attributes["name"] is not None:
-            self._task_name = self.attributes["name"]
+        # If there is no name set then auto-generate the name. This is done because there can be more than
+        # one `AirflowSensorDecorator` of the same type.
+        if self.attributes["name"] is None:
+            deco_index = [
+                d._id
+                for d in self._flow_decorators
+                if issubclass(d.__class__, AirflowSensorDecorator)
+            ].index(self._id)
+            self._airflow_task_name = "%s-%s" % (
+                self.operator_type,
+                task_id_creator([self.operator_type, str(deco_index)]),
+            )
+        else:
+            self._airflow_task_name = self.attributes["name"]
 
     def flow_init(
         self, flow, graph, environment, flow_datastore, metadata, logger, echo, options
