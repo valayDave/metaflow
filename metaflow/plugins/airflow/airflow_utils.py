@@ -3,6 +3,7 @@ import json
 import os
 import random
 import re
+import sys
 import time
 import typing
 from collections import defaultdict
@@ -17,6 +18,7 @@ class AirflowSensorNotFound(Exception):
     headline = "Sensor package not found"
 
 
+# todo (savin-comments): Not needed. Remove trace
 LABEL_VALUE_REGEX = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-\_\.]{0,61}[a-zA-Z0-9])?$")
 
 TASK_ID_XCOM_KEY = "metaflow_task_id"
@@ -112,7 +114,6 @@ class AirflowDAGArgs(object):
         def parse_args(dd):
             data_dict = {}
             for k, v in dd.items():
-                # see the comment below for `from_dict`
                 if isinstance(v, dict):
                     data_dict[k] = parse_args(v)
                 elif isinstance(v, datetime):
@@ -128,6 +129,7 @@ class AirflowDAGArgs(object):
     @classmethod
     def deserialize(cls, data_dict):
         def parse_args(dd, type_check_dict):
+            # todo (savin-comments): simplify this
             kwrgs = {}
             for k, v in dd.items():
                 if k not in type_check_dict:
@@ -265,6 +267,7 @@ class AirflowTask(object):
 
     @classmethod
     def from_dict(cls, jsd, flow_name=None):
+        # todo (savin-comments): change variable name : `jsd`
         op_args = {} if not "operator_args" in jsd else jsd["operator_args"]
         return cls(
             jsd["name"],
@@ -286,9 +289,10 @@ class AirflowTask(object):
                 )
             except ImportError as e:
                 raise KubernetesProviderNotFound(
-                    "This DAG requires a `KubernetesPodOperator`. "
-                    "Install the Airflow Kubernetes provider using : "
-                    "`pip install apache-airflow-providers-cncf-kubernetes`"
+                    "This DAG utilizes `KubernetesPodOperator`. "
+                    "Install the Airflow Kubernetes provider using "
+                    "`%s -m pip install apache-airflow-providers-cncf-kubernetes`"
+                    % sys.executable
                 )
         k8s_args = _kubernetes_pod_operator_args(self._operator_args)
         return KubernetesPodOperator(**k8s_args)

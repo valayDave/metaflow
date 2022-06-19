@@ -32,7 +32,7 @@ def airflow(obj, name=None):
     obj.dag_name = resolve_dag_name(obj, name)
 
 
-@airflow.command(help="Compile a new version of this workflow to Airflow DAG.")
+@airflow.command(help="Compile a new version of this flow to Airflow DAG.")
 @click.argument("file", required=True)
 @click.option(
     "--tag",
@@ -122,7 +122,9 @@ def make_flow(
     file,
 ):
     # Validate if the workflow is correctly parsed.
-    _validate_workflow(obj.flow, obj.graph, obj.flow_datastore, obj.metadata)
+    _validate_workflow(
+        obj.flow, obj.graph, obj.flow_datastore, obj.metadata, workflow_timeout
+    )
 
     # Attach @kubernetes.
     decorators._attach_decorators(obj.flow, [KubernetesDecorator.name])
@@ -163,7 +165,9 @@ def make_flow(
     )
 
 
-def _validate_workflow(flow, graph, flow_datastore, metadata):
+def _validate_workflow(flow, graph, flow_datastore, metadata, workflow_timeout):
+    # todo (savin-comments): Can we throw a pretty error to the user if we detect that they want to set the workflow timeout for an unscheduled DAG?
+    # todo (savin-comments): Can you add a check ensuring that file isn't the same as the flow file?
     # check for other compute related decorators.
     # supported compute : k8s (v1), local(v2), batch(v3),
     for node in graph:

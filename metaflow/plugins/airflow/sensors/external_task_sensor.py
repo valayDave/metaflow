@@ -26,14 +26,15 @@ class ExternalTaskSensorDecorator(AirflowSensorDecorator):
         **AirflowSensorDecorator.defaults,
         external_dag_id=None,
         external_task_ids=None,
-        allowed_states=["success"],
+        allowed_states=[AIRFLOW_STATES["SUCCESS"]],
         failed_states=None,
         execution_delta=None,
         check_existence=True,
-        # we cannot add `execution_date_fn` as it requires a python callable.
+        # We cannot add `execution_date_fn` as it requires a python callable.
         # Passing around a python callable is non-trivial since we are passing a
-        # callable from metaflow-code to airflow python script. In this conversion we cannot
-        # that the callable will as the user expects since we cannot transfer dependencies
+        # callable from metaflow-code to airflow python script. Since we cannot
+        # transfer dependencies of the callable, we cannot gaurentee that the callable
+        # behave exactly as the user expects
     )
 
     def serialize_operator_args(self):
@@ -54,7 +55,7 @@ class ExternalTaskSensorDecorator(AirflowSensorDecorator):
         if type(self.attributes["allowed_states"]) == str:
             if self.attributes["allowed_states"] not in list(AIRFLOW_STATES.values()):
                 raise AirflowException(
-                    "`%s` is an invalid input for the `%s` argument of `@%s`. Accepted values are : %s"
+                    "`%s` is an invalid input of `%s` for `@%s`. Accepted values are %s"
                     % (
                         str(self.attributes["allowed_states"]),
                         "allowed_states",
@@ -70,7 +71,7 @@ class ExternalTaskSensorDecorator(AirflowSensorDecorator):
             ]
             if len(enum_not_matched) > 0:
                 raise AirflowException(
-                    "`%s` is an invalid input for the `%s` argument of `@%s`. Accepted values are : %s"
+                    "`%s` is an invalid input of `%s` for `@%s`. Accepted values are %s"
                     % (
                         str(" OR ".join(["'%s'" % i for i in enum_not_matched])),
                         "allowed_states",
@@ -79,17 +80,16 @@ class ExternalTaskSensorDecorator(AirflowSensorDecorator):
                     )
                 )
         else:
-            self.attributes["allowed_states"] = ["success"]
+            self.attributes["allowed_states"] = [AIRFLOW_STATES["SUCCESS"]]
 
         if self.attributes["execution_delta"] is not None:
             if not isinstance(self.attributes["execution_delta"], timedelta):
                 raise AirflowException(
-                    "`%s` argument of `@%s` does not accept values of type `%s`. Accepted type of `%s` is `%s`"
+                    "`%s` is an invalid input type of `%s` for `@%s`. Accepted type is %s"
                     % (
-                        "execution_delta",
-                        self.name,
                         str(type(self.attributes["execution_delta"])),
                         "execution_delta",
+                        self.name,
                         "datetime.timedelta",
                     )
                 )

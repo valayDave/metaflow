@@ -45,7 +45,7 @@ AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "dag.py")
 class Airflow(object):
 
     parameter_macro = "{{ params | json_dump }}"
-
+    # todo (savin-comments) rename AIRFLOW_TASK_ID_TEMPLATE_VALUE to AIRFLOW_TASK_ID
     task_id = AIRFLOW_TASK_ID_TEMPLATE_VALUE
     task_id_arg = "--task-id %s" % task_id
 
@@ -103,6 +103,8 @@ class Airflow(object):
         self.worker_pool = worker_pool
         self.is_paused_upon_creation = is_paused_upon_creation
         self.workflow_timeout = workflow_timeout
+        # todo (savin-comments): self.schedule = self._set_schedule()
+        # todo (savin-comments): refactor self.schedule_interval to self.schedule
         self._set_scheduling_interval()
 
     def _set_scheduling_interval(self):
@@ -189,24 +191,27 @@ class Airflow(object):
             # Airflow requires defaults set for parameters.
             if "default" not in param.kwargs:
                 raise MetaflowException(
-                    "The parameter *%s* does not have a "
-                    "default set. "
-                    "A default is required for parameters when deploying on Airflow."
+                    "Parameter *%s* does not have a "
+                    "default value. "
+                    "A default value is required for parameters when deploying on Airflow."
                 )
             value = deploy_time_eval(param.kwargs.get("default"))
             parameters.append(dict(name=param.name, value=value))
 
             # Setting airflow related param args.
+            # todo (savin-comments): .get('foo') is equivalent to .get('foo', None)
             param_type = param.kwargs.get("type", None)
             airflow_param = dict(
                 name=param.name,
             )
+            # todo (savin-comments): .get('foo') is equivalent to .get('foo', None)
             param_help = param.kwargs.get("help", None)
             if value is not None:
                 airflow_param["default"] = value
             if param_help:
                 airflow_param["description"] = param_help
             if param_type is not None:
+                # todo (savin-comments): see if code can be refactored over here.
                 if isinstance(param_type, JSONTypeClass):
                     airflow_param["type"] = type_transform_dict[JSONTypeClass.name]
                 elif param_type.__name__ in type_transform_dict:
@@ -217,6 +222,7 @@ class Airflow(object):
                         )
 
             airflow_params.append(airflow_param)
+        # todo (savin-comments) let's avoid these hidden assignments.
         self.parameters = airflow_params
 
         return parameters

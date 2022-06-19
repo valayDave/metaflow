@@ -342,6 +342,7 @@ class KubernetesDecorator(StepDecorator):
 
     @classmethod
     def _parse_decorator_spec(cls, deco_spec):
+        # todo (savin-comments) : check if secret setting is fixed with @kubernetes decorator and refactor below code block if neede
         top = deco_spec.split(":", 1)
         if len(top) == 1:
             return cls()

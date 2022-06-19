@@ -171,13 +171,11 @@ from .airflow.airflow_decorator import (
 
 from .airflow.sensors import (
     S3KeySensorDecorator,
-    SQLSensorDecorator,
     ExternalTaskSensorDecorator,
 )
 
 FLOW_DECORATORS = [CondaFlowDecorator, ScheduleDecorator, ProjectDecorator] + [
     S3KeySensorDecorator,
-    SQLSensorDecorator,
     ExternalTaskSensorDecorator,
     AirflowScheduleIntervalDecorator,
 ]
