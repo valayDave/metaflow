@@ -1,5 +1,4 @@
 import inspect
-import os
 import sys
 import traceback
 from datetime import datetime
@@ -15,6 +14,7 @@ from . import metaflow_version
 from . import namespace
 from . import current
 from .cli_args import cli_args
+from .tagging_util import validate_tags
 from .util import (
     resolve_identity,
     decompress_list,
@@ -44,8 +44,6 @@ from .metaflow_config import (
 )
 from .metaflow_environment import MetaflowEnvironment
 from .pylint_wrapper import PyLint
-from .event_logger import EventLogger
-from .monitor import Monitor
 from .R import use_r, metaflow_r_version
 from .mflog import mflog, LOG_SOURCES
 from .unbounded_foreach import UBF_CONTROL, UBF_TASK
@@ -252,7 +250,7 @@ def dump(obj, input_path, private=None, max_value_size=None, include=None, file=
         run_id, step_name, task_id = parts
     else:
         raise CommandException(
-            "input_path should either be run_id/step_name" "or run_id/step_name/task_id"
+            "input_path should either be run_id/step_name or run_id/step_name/task_id"
         )
 
     datastore_set = TaskDataStoreSet(
@@ -398,7 +396,7 @@ def logs(obj, input_path, stdout=None, stderr=None, both=None, timestamps=False)
                     log = ds.load_log_legacy(stream)
                     if log and timestamps:
                         raise CommandException(
-                            "We can't show --timestamps for " "old runs. Sorry!"
+                            "We can't show --timestamps for old runs. Sorry!"
                         )
                     echo_unicode(log, nl=False)
     else:
@@ -428,7 +426,7 @@ def logs(obj, input_path, stdout=None, stderr=None, both=None, timestamps=False)
 )
 @click.option(
     "--input-paths",
-    help="A comma-separated list of pathspecs " "specifying inputs for this step.",
+    help="A comma-separated list of pathspecs specifying inputs for this step.",
 )
 @click.option(
     "--split-index",
@@ -450,7 +448,7 @@ def logs(obj, input_path, stdout=None, stderr=None, both=None, timestamps=False)
     "--namespace",
     "opt_namespace",
     default=None,
-    help="Change namespace from the default (your username) to " "the specified tag.",
+    help="Change namespace from the default (your username) to the specified tag.",
 )
 @click.option(
     "--retry-count",
@@ -469,9 +467,16 @@ def logs(obj, input_path, stdout=None, stderr=None, both=None, timestamps=False)
     "not execute anything.",
 )
 @click.option(
+    "--clone-wait-only/--no-clone-wait-only",
+    default=False,
+    show_default=True,
+    help="If specified, waits for an external process to clone the task",
+    hidden=True,
+)
+@click.option(
     "--clone-run-id",
     default=None,
-    help="Run id of the origin flow, if this task is part of a flow " "being resumed.",
+    help="Run id of the origin flow, if this task is part of a flow being resumed.",
 )
 @click.option(
     "--with",
@@ -485,7 +490,7 @@ def logs(obj, input_path, stdout=None, stderr=None, both=None, timestamps=False)
     "--ubf-context",
     default="none",
     type=click.Choice(["none", UBF_CONTROL, UBF_TASK]),
-    help="Provides additional context if this task is of type " "unbounded foreach.",
+    help="Provides additional context if this task is of type unbounded foreach.",
 )
 @click.option(
     "--num-parallel",
@@ -506,6 +511,7 @@ def step(
     retry_count=None,
     max_user_code_retries=None,
     clone_only=None,
+    clone_wait_only=False,
     clone_run_id=None,
     decospecs=None,
     ubf_context="none",
@@ -551,7 +557,14 @@ def step(
         ubf_context,
     )
     if clone_only:
-        task.clone_only(step_name, run_id, task_id, clone_only, retry_count)
+        task.clone_only(
+            step_name,
+            run_id,
+            task_id,
+            clone_only,
+            retry_count,
+            wait_only=clone_wait_only,
+        )
     else:
         task.run_step(
             step_name,
@@ -674,6 +687,26 @@ def common_run_options(func):
     help="ID of the run that should be resumed. By default, the "
     "last run executed locally.",
 )
+@click.option(
+    "--run-id",
+    default=None,
+    help="Run ID for the new run. By default, a new run-id will be generated",
+    hidden=True,
+)
+@click.option(
+    "--clone-only/--no-clone-only",
+    default=False,
+    show_default=True,
+    help="Only clone tasks without continuing execution",
+    hidden=True,
+)
+@click.option(
+    "--reentrant/--no-reentrant",
+    default=False,
+    show_default=True,
+    hidden=True,
+    help="If specified, allows this call to be called in parallel",
+)
 @click.argument("step-to-rerun", required=False)
 @cli.command(help="Resume execution of a previous run of this flow.")
 @common_run_options
@@ -683,6 +716,9 @@ def resume(
     tags=None,
     step_to_rerun=None,
     origin_run_id=None,
+    run_id=None,
+    clone_only=False,
+    reentrant=False,
     max_workers=None,
     max_num_splits=None,
     max_log_size=None,
@@ -712,6 +748,17 @@ def resume(
             )
         clone_steps = {step_to_rerun}
 
+    if run_id:
+        # Run-ids that are provided by the metadata service are always integers.
+        # External providers or run-ids (like external schedulers) always need to
+        # be non-integers to avoid any clashes. This condition ensures this.
+        try:
+            int(run_id)
+        except:
+            pass
+        else:
+            raise CommandException("run-id %s cannot be an integer" % run_id)
+
     runtime = NativeRuntime(
         obj.flow,
         obj.graph,
@@ -723,7 +770,10 @@ def resume(
         obj.entrypoint,
         obj.event_logger,
         obj.monitor,
+        run_id=run_id,
         clone_run_id=origin_run_id,
+        clone_only=clone_only,
+        reentrant=reentrant,
         clone_steps=clone_steps,
         max_workers=max_workers,
         max_num_splits=max_num_splits,
@@ -795,6 +845,8 @@ def write_run_id(run_id_file, run_id):
 
 
 def before_run(obj, tags, decospecs):
+    validate_tags(tags)
+
     # There's a --with option both at the top-level and for the run
     # subcommand. Why?
     #
@@ -813,6 +865,7 @@ def before_run(obj, tags, decospecs):
     decorators._init_step_decorators(
         obj.flow, obj.graph, obj.environment, obj.flow_datastore, obj.logger
     )
+
     obj.metadata.add_sticky_tags(tags=tags)
 
     # Package working directory only once per run.
@@ -865,7 +918,7 @@ def version(obj):
 @click.option("--datastore-root", help="Root path for datastore")
 @click.option(
     "--package-suffixes",
-    help="A comma-separated list of file suffixes to include " "in the code package.",
+    help="A comma-separated list of file suffixes to include in the code package.",
     default=DEFAULT_PACKAGE_SUFFIXES,
     show_default=True,
 )
@@ -929,6 +982,7 @@ def start(
     cli_args._set_top_kwargs(ctx.params)
     ctx.obj.echo = echo
     ctx.obj.echo_always = echo_always
+    ctx.obj.is_quiet = quiet
     ctx.obj.graph = FlowGraph(ctx.obj.flow.__class__)
     ctx.obj.logger = logger
     ctx.obj.check = _check
@@ -937,14 +991,19 @@ def start(
     ctx.obj.package_suffixes = package_suffixes.split(",")
     ctx.obj.reconstruct_cli = _reconstruct_cli
 
-    ctx.obj.event_logger = EventLogger(event_logger)
-
     ctx.obj.environment = [
         e for e in ENVIRONMENTS + [MetaflowEnvironment] if e.TYPE == environment
     ][0](ctx.obj.flow)
     ctx.obj.environment.validate_environment(echo)
 
-    ctx.obj.monitor = Monitor(monitor, ctx.obj.environment, ctx.obj.flow.name)
+    ctx.obj.event_logger = LOGGING_SIDECARS[event_logger](
+        flow=ctx.obj.flow, env=ctx.obj.environment
+    )
+    ctx.obj.event_logger.start()
+
+    ctx.obj.monitor = MONITOR_SIDECARS[monitor](
+        flow=ctx.obj.flow, env=ctx.obj.environment
+    )
     ctx.obj.monitor.start()
 
     ctx.obj.metadata = [m for m in METADATA_PROVIDERS if m.TYPE == metadata][0](
@@ -1116,3 +1175,8 @@ def main(flow, args=None, handle_exceptions=True, entrypoint=None):
             sys.exit(1)
         else:
             raise
+    finally:
+        if hasattr(state, "monitor") and state.monitor is not None:
+            state.monitor.terminate()
+        if hasattr(state, "event_logger") and state.event_logger is not None:
+            state.event_logger.terminate()
