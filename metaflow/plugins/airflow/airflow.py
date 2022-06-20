@@ -437,14 +437,14 @@ class Airflow(object):
             is_delete_operator_pod=True,
             retry_exponential_backoff=False,  # todo : should this be a arg we allow on CLI. not right now - there is an open ticket for this - maybe at some point we will.
             reattach_on_restart=False,
+            secrets=[],
         )
         if k8s_deco.attributes["secrets"]:
             if isinstance(k8s_deco.attributes["secrets"], str):
                 k8s_operator_args["secrets"] = k8s_deco.attributes["secrets"].split(",")
             elif isinstance(k8s_deco.attributes["secrets"], list):
                 k8s_operator_args["secrets"] = k8s_deco.attributes["secrets"]
-
-        if len(KUBERNETES_SECRETS.split(",")) > 0:
+        if len(KUBERNETES_SECRETS) > 0:
             k8s_operator_args["secrets"] += KUBERNETES_SECRETS.split(",")
 
         if retry_delay:
