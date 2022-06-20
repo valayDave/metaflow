@@ -85,10 +85,6 @@ class AirflowInternalDecorator(StepDecorator):
         ubf_context,
         inputs,
     ):
-        # todo (savin-comments): fix this comment.
-        # find out where the execution is taking place.
-        # Once figured where the execution is happening then we can do
-        # handle xcom push / pull differently
         meta = {}
         meta["airflow-dag-run-id"] = os.environ["METAFLOW_AIRFLOW_DAG_RUN_ID"]
         meta["airflow-job-id"] = os.environ["METAFLOW_AIRFLOW_JOB_ID"]

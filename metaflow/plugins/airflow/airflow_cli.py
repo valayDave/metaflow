@@ -1,4 +1,6 @@
+import os
 import re
+import sys
 
 from metaflow import S3, current, decorators
 from metaflow._vendor import click
@@ -86,6 +88,11 @@ def create(
     workflow_timeout=None,
     worker_pool=None,
 ):
+    if os.path.abspath(sys.argv[0]) == os.path.abspath(file):
+        raise MetaflowException(
+            "Airflow DAG file name cannot be the same as flow file name"
+        )
+
     obj.echo("Compiling *%s* to Airflow DAG..." % obj.dag_name, bold=True)
 
     flow = make_flow(
@@ -166,8 +173,14 @@ def make_flow(
 
 
 def _validate_workflow(flow, graph, flow_datastore, metadata, workflow_timeout):
-    # todo (savin-comments): Can we throw a pretty error to the user if we detect that they want to set the workflow timeout for an unscheduled DAG?
-    # todo (savin-comments): Can you add a check ensuring that file isn't the same as the flow file?
+    no_scheduling = not (
+        flow._flow_decorators.get("airflow_schedule_interval")
+        or flow._flow_decorators.get("schedule")
+    )
+    if no_scheduling and workflow_timeout is not None:
+        raise AirflowException(
+            "Cannot set `--workflow-timeout` for an unscheduled DAG. Add `@schedule` or `@airflow_schedule_interval` to the flow to set `--workflow-timeout`."
+        )
     # check for other compute related decorators.
     # supported compute : k8s (v1), local(v2), batch(v3),
     for node in graph:

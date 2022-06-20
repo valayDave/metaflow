@@ -18,31 +18,28 @@ class AirflowSensorNotFound(Exception):
     headline = "Sensor package not found"
 
 
-# todo (savin-comments): Not needed. Remove trace
-LABEL_VALUE_REGEX = re.compile(r"^[a-zA-Z0-9]([a-zA-Z0-9\-\_\.]{0,61}[a-zA-Z0-9])?$")
-
 TASK_ID_XCOM_KEY = "metaflow_task_id"
 RUN_ID_LEN = 12
 TASK_ID_LEN = 8
 RUN_ID_PREFIX = "airflow"
 
-# AIRFLOW_TASK_ID_TEMPLATE_VALUE will work for linear/branched workflows.
+# AIRFLOW_TASK_ID will work for linear/branched workflows.
 # ti.task_id is the stepname in metaflow code.
-# AIRFLOW_TASK_ID_TEMPLATE_VALUE uses a jinja filter called `task_id_creator` which helps
+# AIRFLOW_TASK_ID uses a jinja filter called `task_id_creator` which helps
 # concatenate the string using a `/`. Since run-id will keep changing and stepname will be
 # the same task id will change. Since airflow doesn't encourage dynamic rewriting of dags
 # we can rename steps in a foreach with indexes (eg. `stepname-$index`) to create those steps.
 # Hence : Foreachs will require some special form of plumbing.
 # https://stackoverflow.com/questions/62962386/can-an-airflow-task-dynamically-generate-a-dag-at-runtime
-AIRFLOW_TASK_ID_TEMPLATE_VALUE = (
+AIRFLOW_TASK_ID = (
     "%s-{{ [run_id, ti.task_id, dag_run.dag_id ] | task_id_creator  }}" % RUN_ID_PREFIX
 )
 
 
 class SensorNames:
     EXTERNAL_TASK_SENSOR = "ExternalTaskSensor"
-    SQL_SENSOR = "SQLSensor"
     S3_SENSOR = "S3KeySensor"
+    SQL_SENSOR = "SQLSensor"
 
     @classmethod
     def get_supported_sensors(cls):
@@ -165,7 +162,9 @@ def _kubernetes_pod_operator_args(operator_args):
             # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user?
         }
     )
-    # Below cannot be passed in dictionary form. After trying a few times it didin't work.
+    # Below cannot be passed in dictionary form.
+    # Airflow accepts `V1EnvVar` in JSON form but once the JSON array has
+    # hetrogenious data-types (`V1EnvVar` with `value` and `value_from`)
     additional_env_vars = [
         client.V1EnvVar(
             name=k,
@@ -191,13 +190,13 @@ def _kubernetes_pod_operator_args(operator_args):
     args["resources"] = client.V1ResourceRequirements(
         requests=resources["requests"],
     )
-    if operator_args.get("execution_timeout", None):
+    if operator_args.get("execution_timeout"):
         args["execution_timeout"] = timedelta(
             **operator_args.get(
                 "execution_timeout",
             )
         )
-    if operator_args.get("retry_delay", None):
+    if operator_args.get("retry_delay"):
         args["retry_delay"] = timedelta(**operator_args.get("retry_delay"))
     return args
 
@@ -266,13 +265,12 @@ class AirflowTask(object):
         }
 
     @classmethod
-    def from_dict(cls, jsd, flow_name=None):
-        # todo (savin-comments): change variable name : `jsd`
-        op_args = {} if not "operator_args" in jsd else jsd["operator_args"]
+    def from_dict(cls, task_dict, flow_name=None):
+        op_args = {} if not "operator_args" in task_dict else task_dict["operator_args"]
         return cls(
-            jsd["name"],
-            operator_type=jsd["operator_type"]
-            if "operator_type" in jsd
+            task_dict["name"],
+            operator_type=task_dict["operator_type"]
+            if "operator_type" in task_dict
             else "kubernetes",
             flow_name=flow_name,
         ).set_operator_args(**op_args)

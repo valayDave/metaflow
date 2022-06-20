@@ -1,6 +1,4 @@
-import json
 import os
-import re
 import platform
 import sys
 
@@ -339,33 +337,3 @@ class KubernetesDecorator(StepDecorator):
             cls.package_url, cls.package_sha = flow_datastore.save_data(
                 [package.blob], len_hint=1
             )[0]
-
-    @classmethod
-    def _parse_decorator_spec(cls, deco_spec):
-        # todo (savin-comments) : check if secret setting is fixed with @kubernetes decorator and refactor below code block if neede
-        top = deco_spec.split(":", 1)
-        if len(top) == 1:
-            return cls()
-        else:
-            name, attrspec = top
-            attrs = dict(
-                map(lambda x: x.strip(), a.split("="))
-                for a in re.split(""",(?=[\s\w]+=)""", attrspec.strip("\"'"))
-            )
-            if "secrets" in attrs:
-                try:
-                    attrs["secrets"] = json.loads(attrs["secrets"])
-                except json.JSONDecodeError as e:
-                    del attrs["secrets"]
-
-            return cls(attributes=attrs)
-
-    def make_decorator_spec(self):
-        attrs = {k: v for k, v in self.attributes.items() if v is not None}
-        if attrs:
-            if "secrets" in attrs:
-                attrs["secrets"] = json.dumps(attrs["secrets"])
-            attrstr = ",".join("%s=%s" % x for x in attrs.items())
-            return "%s:%s" % (self.name, attrstr)
-        else:
-            return self.name

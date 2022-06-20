@@ -45,7 +45,7 @@ class ExternalTaskSensorDecorator(AirflowSensorDecorator):
             )
         return task_args
 
-    def compile(self):
+    def validate(self):
         if self.attributes["external_dag_id"] is None:
             raise AirflowException(
                 "`%s` argument of `@%s`cannot be `None`."
@@ -93,4 +93,4 @@ class ExternalTaskSensorDecorator(AirflowSensorDecorator):
                         "datetime.timedelta",
                     )
                 )
-        super().compile()
+        super().validate()
