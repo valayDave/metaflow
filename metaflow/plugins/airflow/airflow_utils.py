@@ -46,16 +46,9 @@ class SensorNames:
         return list(cls.__dict__.values())
 
 
-def run_id_creator(val):
+def id_creator(val, hash_len):
     # join `[dag-id,run-id]` of airflow dag.
-    return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:RUN_HASH_ID_LEN]
-
-
-def task_id_creator(lst):
-    # This is a filter which creates a hash of the run_id/step_name string.
-    # Since run_ids in airflow are constants, they don't create an issue with the
-    #
-    return hashlib.md5("/".join(lst).encode("utf-8")).hexdigest()[:TASK_ID_HASH_LEN]
+    return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:hash_len]
 
 
 def json_dump(val):
@@ -95,9 +88,9 @@ class AirflowDAGArgs(object):
 
     # Reference for user_defined_filters : https://stackoverflow.com/a/70175317
     filters = dict(
-        task_id_creator=lambda v: task_id_creator(v),
+        task_id_creator=lambda v: id_creator(v, TASK_ID_HASH_LEN),
         json_dump=lambda val: json_dump(val),
-        run_id_creator=lambda val: run_id_creator(val),
+        run_id_creator=lambda val: id_creator(val, RUN_HASH_ID_LEN),
     )
 
     def __init__(self, **kwargs):

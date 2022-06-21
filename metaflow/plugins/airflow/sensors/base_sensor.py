@@ -1,7 +1,7 @@
 import uuid
 from metaflow.decorators import FlowDecorator
 from ..exception import AirflowException
-from ..airflow_utils import AirflowTask, task_id_creator
+from ..airflow_utils import AirflowTask, id_creator, TASK_ID_HASH_LEN
 
 
 class AirflowSensorDecorator(FlowDecorator):
@@ -63,7 +63,7 @@ class AirflowSensorDecorator(FlowDecorator):
             ].index(self._id)
             self._airflow_task_name = "%s-%s" % (
                 self.operator_type,
-                task_id_creator([self.operator_type, str(deco_index)]),
+                id_creator([self.operator_type, str(deco_index)], TASK_ID_HASH_LEN),
             )
         else:
             self._airflow_task_name = self.attributes["name"]
