@@ -32,7 +32,7 @@ from .exception import AirflowException
 from .sensors import SUPPORTED_SENSORS
 from .airflow_utils import (
     AIRFLOW_TASK_ID,
-    RUN_ID_LEN,
+    RUN_HASH_ID_LEN,
     RUN_ID_PREFIX,
     TASK_ID_XCOM_KEY,
     AirflowTask,
@@ -53,7 +53,7 @@ class Airflow(object):
     # Such run-ids break the `metaflow.util.decompress_list`; this is why we hash the runid
     run_id = (
         "%s-$(echo -n {{ run_id }}-{{ dag_run.dag_id }} | md5sum | awk '{print $1}' | awk '{print substr ($0, 0, %s)}')"
-        % (RUN_ID_PREFIX, str(RUN_ID_LEN))
+        % (RUN_ID_PREFIX, str(RUN_HASH_ID_LEN))
     )
     # We do echo -n because emits line breaks and we dont want to consider that since it we want same hash value when retrieved in python.
     run_id_arg = "--run-id %s" % run_id
