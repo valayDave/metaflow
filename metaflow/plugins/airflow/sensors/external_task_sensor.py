@@ -85,12 +85,10 @@ class ExternalTaskSensorDecorator(AirflowSensorDecorator):
         if self.attributes["execution_delta"] is not None:
             if not isinstance(self.attributes["execution_delta"], timedelta):
                 raise AirflowException(
-                    "`%s` is an invalid input type of `%s` for `@%s`. Accepted type is %s"
+                    "`%s` is an invalid input type of `execution_delta` for `@%s`. Accepted type is `datetime.timedelta`"
                     % (
                         str(type(self.attributes["execution_delta"])),
-                        "execution_delta",
                         self.name,
-                        "datetime.timedelta",
                     )
                 )
         super().validate()
