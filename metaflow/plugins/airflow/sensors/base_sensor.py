@@ -26,7 +26,6 @@ class AirflowSensorDecorator(FlowDecorator):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        # Is the task is task name a metaflow task?
         self._airflow_task_name = None
         self._id = str(uuid.uuid4())
 
@@ -50,10 +49,9 @@ class AirflowSensorDecorator(FlowDecorator):
             operator_type=self.operator_type,
         ).set_operator_args(**{k: v for k, v in task_args.items() if v is not None})
 
-    def compile(self):
+    def validate(self):
         """
-        compile the arguments for `airflow create` command.
-        This will even check if the arguments are acceptible.
+        Validate if the arguments for the sensor are correct.
         """
         # If there is no name set then auto-generate the name. This is done because there can be more than
         # one `AirflowSensorDecorator` of the same type.
@@ -73,4 +71,4 @@ class AirflowSensorDecorator(FlowDecorator):
     def flow_init(
         self, flow, graph, environment, flow_datastore, metadata, logger, echo, options
     ):
-        self.compile()
+        self.validate()
