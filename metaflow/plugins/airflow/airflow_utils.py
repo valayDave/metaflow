@@ -19,8 +19,8 @@ class AirflowSensorNotFound(Exception):
 
 
 TASK_ID_XCOM_KEY = "metaflow_task_id"
-RUN_ID_LEN = 12
-TASK_ID_LEN = 8
+RUN_HASH_ID_LEN = 12
+TASK_ID_HASH_LEN = 8
 RUN_ID_PREFIX = "airflow"
 
 # AIRFLOW_TASK_ID will work for linear/branched workflows.
@@ -48,14 +48,14 @@ class SensorNames:
 
 def run_id_creator(val):
     # join `[dag-id,run-id]` of airflow dag.
-    return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:RUN_ID_LEN]
+    return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:RUN_HASH_ID_LEN]
 
 
 def task_id_creator(lst):
     # This is a filter which creates a hash of the run_id/step_name string.
     # Since run_ids in airflow are constants, they don't create an issue with the
     #
-    return hashlib.md5("/".join(lst).encode("utf-8")).hexdigest()[:TASK_ID_LEN]
+    return hashlib.md5("/".join(lst).encode("utf-8")).hexdigest()[:TASK_ID_HASH_LEN]
 
 
 def json_dump(val):
