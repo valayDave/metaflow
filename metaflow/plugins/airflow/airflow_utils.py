@@ -126,12 +126,8 @@ class AirflowDAGArgs(object):
     @classmethod
     def deserialize(cls, data_dict):
         def parse_args(dd, type_check_dict):
-            # todo (savin-comments): simplify this
             kwrgs = {}
             for k, v in dd.items():
-                if k not in type_check_dict:
-                    kwrgs[k] = v
-                    continue
                 if isinstance(v, dict) and isinstance(type_check_dict[k], dict):
                     kwrgs[k] = parse_args(v, type_check_dict[k])
                 elif type_check_dict[k] == datetime:

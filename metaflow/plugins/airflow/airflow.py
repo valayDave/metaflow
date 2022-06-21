@@ -203,15 +203,18 @@ class Airflow(object):
             if param_help:
                 airflow_param["description"] = param_help
             if param_type is not None:
-                # todo (savin-comments): see if code can be refactored over here.
-                if isinstance(param_type, JSONTypeClass):
-                    airflow_param["type"] = type_transform_dict[JSONTypeClass.name]
-                elif param_type.__name__ in type_transform_dict:
-                    airflow_param["type"] = type_transform_dict[param_type.__name__]
-                    if param_type.__name__ in type_parser and value is not None:
-                        airflow_param["default"] = type_parser[param_type.__name__](
-                            value
-                        )
+                # Todo (fast-follow): Check if we can support more `click.Param` types
+
+                param_type_name = getattr(param_type, "__name__", None)
+                if not param_type_name and isinstance(param_type, JSONTypeClass):
+                    # `JSONTypeClass` has no __name__ attribute so we need to explicitly check if
+                    # `param_type` is an instance of `JSONTypeClass``
+                    param_type_name = param_type.name
+
+                if param_type_name in type_transform_dict:
+                    airflow_param["type"] = type_transform_dict[param_type_name]
+                    if param_type_name in type_parser and value is not None:
+                        airflow_param["default"] = type_parser[param_type_name](value)
 
             airflow_params.append(airflow_param)
 
