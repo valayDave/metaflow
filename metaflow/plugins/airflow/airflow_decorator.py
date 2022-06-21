@@ -25,19 +25,6 @@ def push_xcom_values(xcom_dict):
         json.dump(xcom_dict, f)
 
 
-AIRFLOW_STATES = dict(
-    QUEUED="queued",
-    RUNNING="running",
-    SUCCESS="success",
-    SHUTDOWN="shutdown",  # External request to shut down,
-    FAILED="failed",
-    UP_FOR_RETRY="up_for_retry",
-    UP_FOR_RESCHEDULE="up_for_reschedule",
-    UPSTREAM_FAILED="upstream_failed",
-    SKIPPED="skipped",
-)
-
-
 class AirflowScheduleIntervalDecorator(FlowDecorator):
     name = "airflow_schedule_interval"
     defaults = {"cron": None, "weekly": False, "daily": True, "hourly": False}
@@ -98,9 +85,6 @@ class AirflowInternalDecorator(StepDecorator):
         ubf_context,
         inputs,
     ):
-        # find out where the execution is taking place.
-        # Once figured where the execution is happening then we can do
-        # handle xcom push / pull differently
         meta = {}
         meta["airflow-dag-run-id"] = os.environ["METAFLOW_AIRFLOW_DAG_RUN_ID"]
         meta["airflow-job-id"] = os.environ["METAFLOW_AIRFLOW_JOB_ID"]
