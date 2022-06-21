@@ -18,7 +18,7 @@ class SQLSensorDecorator(AirflowSensorDecorator):
         fail_on_empty=True,
     )
 
-    def compile(self):
+    def validate(self):
         if self.attributes["conn_id"] is None:
             raise AirflowException(
                 "`%s` argument of `@%s`cannot be `None`." % ("conn_id", self.name)
@@ -28,4 +28,4 @@ class SQLSensorDecorator(AirflowSensorDecorator):
             raise AirflowException(
                 "`%s` argument of `@%s`cannot be `None`." % ("sql", self.name)
             )
-        super().compile()
+        super().validate()

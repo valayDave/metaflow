@@ -16,6 +16,7 @@ from metaflow.metaflow_config import (
     DATASTORE_SYSROOT_S3,
     DATATOOLS_S3ROOT,
     KUBERNETES_SERVICE_ACCOUNT,
+    KUBERNETES_SECRETS,
 )
 from metaflow.parameters import deploy_time_eval
 from metaflow.plugins.kubernetes.kubernetes import Kubernetes
@@ -30,7 +31,7 @@ from . import airflow_utils
 from .exception import AirflowException
 from .sensors import SUPPORTED_SENSORS
 from .airflow_utils import (
-    AIRFLOW_TASK_ID_TEMPLATE_VALUE,
+    AIRFLOW_TASK_ID,
     RUN_ID_LEN,
     RUN_ID_PREFIX,
     TASK_ID_XCOM_KEY,
@@ -45,8 +46,7 @@ AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "dag.py")
 class Airflow(object):
 
     parameter_macro = "{{ params | json_dump }}"
-
-    task_id = AIRFLOW_TASK_ID_TEMPLATE_VALUE
+    task_id = AIRFLOW_TASK_ID
     task_id_arg = "--task-id %s" % task_id
 
     # Airflow run_ids are of the form : "manual__2022-03-15T01:26:41.186781+00:00"
@@ -98,14 +98,14 @@ class Airflow(object):
         self.description = description
         self._depends_on_upstream_sensors = False
         self._file_path = file_path
-        self.parameters = None
         _, self.graph_structure = self.graph.output_steps()
         self.worker_pool = worker_pool
         self.is_paused_upon_creation = is_paused_upon_creation
         self.workflow_timeout = workflow_timeout
-        self._set_scheduling_interval()
+        self.schedule = self._scheduling_interval()
+        self.parameters = self._process_parameters()
 
-    def _set_scheduling_interval(self):
+    def _scheduling_interval(self):
         """
         The airflow integration allows setting schedule interval using `@schedule` and `@airflow_schedule_interval` decorator.
         This method will extract interval from both and apply the one which is not None. We raise an exception in the
@@ -115,11 +115,10 @@ class Airflow(object):
             self._get_schedule(),
             self._get_airflow_schedule_interval(),
         )
-        self.schedule_interval = None
         if schedule_decorator_cron_pattern is not None:
-            self.schedule_interval = schedule_decorator_cron_pattern
+            return schedule_decorator_cron_pattern
         elif airflow_schedule_decorator_cron_pattern is not None:
-            self.schedule_interval = airflow_schedule_decorator_cron_pattern
+            return airflow_schedule_decorator_cron_pattern
 
     def _get_schedule(self):
         # Using the cron presets provided here :
@@ -163,7 +162,6 @@ class Airflow(object):
         return None
 
     def _process_parameters(self):
-        parameters = []
         seen = set()
         airflow_params = []
         type_transform_dict = {
@@ -189,24 +187,23 @@ class Airflow(object):
             # Airflow requires defaults set for parameters.
             if "default" not in param.kwargs:
                 raise MetaflowException(
-                    "The parameter *%s* does not have a "
-                    "default set. "
-                    "A default is required for parameters when deploying on Airflow."
+                    "Parameter *%s* does not have a "
+                    "default value. "
+                    "A default value is required for parameters when deploying on Airflow."
                 )
             value = deploy_time_eval(param.kwargs.get("default"))
-            parameters.append(dict(name=param.name, value=value))
-
             # Setting airflow related param args.
-            param_type = param.kwargs.get("type", None)
+            param_type = param.kwargs.get("type")
             airflow_param = dict(
                 name=param.name,
             )
-            param_help = param.kwargs.get("help", None)
+            param_help = param.kwargs.get("help")
             if value is not None:
                 airflow_param["default"] = value
             if param_help:
                 airflow_param["description"] = param_help
             if param_type is not None:
+                # todo (savin-comments): see if code can be refactored over here.
                 if isinstance(param_type, JSONTypeClass):
                     airflow_param["type"] = type_transform_dict[JSONTypeClass.name]
                 elif param_type.__name__ in type_transform_dict:
@@ -217,9 +214,8 @@ class Airflow(object):
                         )
 
             airflow_params.append(airflow_param)
-        self.parameters = airflow_params
 
-        return parameters
+        return airflow_params
 
     def _make_input_path_compressed(
         self,
@@ -275,15 +271,9 @@ class Airflow(object):
             # Initialize parameters for the flow in the `start` step.
             # `start` step has no upstream input dependencies aside from
             # parameters.
-            parameters = self._process_parameters()
-            if parameters:
+
+            if len(self.parameters):
                 env["METAFLOW_PARAMETERS"] = self.parameter_macro
-                default_parameters = {}
-                for parameter in parameters:
-                    if parameter["value"] is not None:
-                        default_parameters[parameter["name"]] = parameter["value"]
-                # Dump the default values specified in the flow.
-                env["METAFLOW_DEFAULT_PARAMETERS"] = json.dumps(default_parameters)
             input_paths = None
         else:
             # If it is not the start node then we check if there are many paths
@@ -335,7 +325,7 @@ class Airflow(object):
         k8s = Kubernetes(self.flow_datastore, self.metadata, self.environment)
         user = util.get_username()
 
-        airflow_task_id = AIRFLOW_TASK_ID_TEMPLATE_VALUE
+        airflow_task_id = AIRFLOW_TASK_ID
         mf_run_id = (
             "%s-{{ [run_id, dag_run.dag_id] | run_id_creator }}" % RUN_ID_PREFIX
         )  # run_id_creator is added via the `user_defined_filters`
@@ -447,9 +437,15 @@ class Airflow(object):
             is_delete_operator_pod=True,
             retry_exponential_backoff=False,  # todo : should this be a arg we allow on CLI. not right now - there is an open ticket for this - maybe at some point we will.
             reattach_on_restart=False,
+            secrets=[],
         )
         if k8s_deco.attributes["secrets"]:
-            k8s_operator_args["secrets"] = k8s_deco.attributes["secrets"]
+            if isinstance(k8s_deco.attributes["secrets"], str):
+                k8s_operator_args["secrets"] = k8s_deco.attributes["secrets"].split(",")
+            elif isinstance(k8s_deco.attributes["secrets"], list):
+                k8s_operator_args["secrets"] = k8s_deco.attributes["secrets"]
+        if len(KUBERNETES_SECRETS) > 0:
+            k8s_operator_args["secrets"] += KUBERNETES_SECRETS.split(",")
 
         if retry_delay:
             k8s_operator_args["retry_delay"] = dict(seconds=retry_delay.total_seconds())
@@ -613,7 +609,7 @@ class Airflow(object):
         airflow_dag_args["is_paused_upon_creation"] = self.is_paused_upon_creation
 
         # workflow timeout should only be enforced if a dag is scheduled.
-        if self.workflow_timeout is not None and self.schedule_interval is not None:
+        if self.workflow_timeout is not None and self.schedule is not None:
             airflow_dag_args["dagrun_timeout"] = dict(seconds=self.workflow_timeout)
 
         appending_sensors = self._collect_flow_sensors()
@@ -621,7 +617,7 @@ class Airflow(object):
             dag_id=self.name,
             default_args=self._create_defaults(),
             description=self.description,
-            schedule_interval=self.schedule_interval,
+            schedule_interval=self.schedule,
             start_date=datetime.now(),
             tags=self.tags,
             file_path=self._file_path,

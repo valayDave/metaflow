@@ -1,4 +1,6 @@
+import os
 import re
+import sys
 
 from metaflow import S3, current, decorators
 from metaflow._vendor import click
@@ -32,7 +34,7 @@ def airflow(obj, name=None):
     obj.dag_name = resolve_dag_name(obj, name)
 
 
-@airflow.command(help="Compile a new version of this workflow to Airflow DAG.")
+@airflow.command(help="Compile a new version of this flow to Airflow DAG.")
 @click.argument("file", required=True)
 @click.option(
     "--tag",
@@ -86,6 +88,11 @@ def create(
     workflow_timeout=None,
     worker_pool=None,
 ):
+    if os.path.abspath(sys.argv[0]) == os.path.abspath(file):
+        raise MetaflowException(
+            "Airflow DAG file name cannot be the same as flow file name"
+        )
+
     obj.echo("Compiling *%s* to Airflow DAG..." % obj.dag_name, bold=True)
 
     flow = make_flow(
@@ -122,7 +129,9 @@ def make_flow(
     file,
 ):
     # Validate if the workflow is correctly parsed.
-    _validate_workflow(obj.flow, obj.graph, obj.flow_datastore, obj.metadata)
+    _validate_workflow(
+        obj.flow, obj.graph, obj.flow_datastore, obj.metadata, workflow_timeout
+    )
 
     # Attach @kubernetes.
     decorators._attach_decorators(obj.flow, [KubernetesDecorator.name])
@@ -163,7 +172,15 @@ def make_flow(
     )
 
 
-def _validate_workflow(flow, graph, flow_datastore, metadata):
+def _validate_workflow(flow, graph, flow_datastore, metadata, workflow_timeout):
+    no_scheduling = not (
+        flow._flow_decorators.get("airflow_schedule_interval")
+        or flow._flow_decorators.get("schedule")
+    )
+    if no_scheduling and workflow_timeout is not None:
+        raise AirflowException(
+            "Cannot set `--workflow-timeout` for an unscheduled DAG. Add `@schedule` or `@airflow_schedule_interval` to the flow to set `--workflow-timeout`."
+        )
     # check for other compute related decorators.
     # supported compute : k8s (v1), local(v2), batch(v3),
     for node in graph:
