@@ -128,7 +128,9 @@ class AirflowDAGArgs(object):
         def parse_args(dd, type_check_dict):
             kwrgs = {}
             for k, v in dd.items():
-                if isinstance(v, dict) and isinstance(type_check_dict[k], dict):
+                if k not in type_check_dict:
+                    kwrgs[k] = v
+                elif isinstance(v, dict) and isinstance(type_check_dict[k], dict):
                     kwrgs[k] = parse_args(v, type_check_dict[k])
                 elif type_check_dict[k] == datetime:
                     kwrgs[k] = datetime.fromisoformat(v)
