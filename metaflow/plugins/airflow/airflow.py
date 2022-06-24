@@ -621,6 +621,9 @@ class Airflow(object):
             default_args=self._create_defaults(),
             description=self.description,
             schedule_interval=self.schedule,
+            # `start_date` is a mandatory argument even though the documentation lists it as optional value
+            # Based on the code, Airflow will throw a `AirflowException` when `start_date` is not provided
+            # to a DAG : https://github.com/apache/airflow/blob/0527a0b6ce506434a23bc2a6f5ddb11f492fc614/airflow/models/dag.py#L2170
             start_date=datetime.now(),
             tags=self.tags,
             file_path=self._file_path,
