@@ -23,17 +23,38 @@ RUN_HASH_ID_LEN = 12
 TASK_ID_HASH_LEN = 8
 RUN_ID_PREFIX = "airflow"
 
-# AIRFLOW_TASK_ID will work for linear/branched workflows.
-# ti.task_id is the stepname in metaflow code.
-# AIRFLOW_TASK_ID uses a jinja filter called `task_id_creator` which helps
-# concatenate the string using a `/`. Since run-id will keep changing and stepname will be
-# the same task id will change. Since airflow doesn't encourage dynamic rewriting of dags
-# we can rename steps in a foreach with indexes (eg. `stepname-$index`) to create those steps.
-# Hence : Foreachs will require some special form of plumbing.
-# https://stackoverflow.com/questions/62962386/can-an-airflow-task-dynamically-generate-a-dag-at-runtime
-AIRFLOW_TASK_ID = (
-    "%s-{{ [run_id, ti.task_id, dag_run.dag_id ] | task_id_creator  }}" % RUN_ID_PREFIX
-)
+
+class AIRFLOW_MACROS:
+    # run_id_creator is added via the `user_defined_filters`
+    RUN_ID = "%s-{{ [run_id, dag_run.dag_id] | run_id_creator }}" % RUN_ID_PREFIX
+    PARAMETER = "{{ params | json_dump }}"
+
+    # AIRFLOW_MACROS.TASK_ID will work for linear/branched workflows.
+    # ti.task_id is the stepname in metaflow code.
+    # AIRFLOW_MACROS.TASK_ID uses a jinja filter called `task_id_creator` which helps
+    # concatenate the string using a `/`. Since run-id will keep changing and stepname will be
+    # the same task id will change. Since airflow doesn't encourage dynamic rewriting of dags
+    # we can rename steps in a foreach with indexes (eg. `stepname-$index`) to create those steps.
+    # Hence : Foreachs will require some special form of plumbing.
+    # https://stackoverflow.com/questions/62962386/can-an-airflow-task-dynamically-generate-a-dag-at-runtime
+    TASK_ID = (
+        "%s-{{ [run_id, ti.task_id, dag_run.dag_id ] | task_id_creator  }}"
+        % RUN_ID_PREFIX
+    )
+
+    # Airflow run_ids are of the form : "manual__2022-03-15T01:26:41.186781+00:00"
+    # Such run-ids break the `metaflow.util.decompress_list`; this is why we hash the runid
+    # We do echo -n because emits line breaks and we dont want to consider that since it we want same hash value when retrieved in python.
+    RUN_ID_SHELL = (
+        "%s-$(echo -n {{ run_id }}-{{ dag_run.dag_id }} | md5sum | awk '{print $1}' | awk '{print substr ($0, 0, %s)}')"
+        % (RUN_ID_PREFIX, str(RUN_HASH_ID_LEN))
+    )
+
+    ATTEMPT = "{{ task_instance.try_number - 1 }}"
+
+    AIRFLOW_RUN_ID = "{{ run_id }}"
+
+    AIRFLOW_JOB_ID = "{{ ti.job_id }}"
 
 
 class SensorNames:
@@ -44,6 +65,16 @@ class SensorNames:
     @classmethod
     def get_supported_sensors(cls):
         return list(cls.__dict__.values())
+
+
+def run_id_creator(val):
+    # join `[dag-id,run-id]` of airflow dag.
+    return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:RUN_HASH_ID_LEN]
+
+
+def task_id_creator(val):
+    # join `[dag-id,run-id]` of airflow dag.
+    return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:TASK_ID_HASH_LEN]
 
 
 def id_creator(val, hash_len):
@@ -88,9 +119,9 @@ class AirflowDAGArgs(object):
 
     # Reference for user_defined_filters : https://stackoverflow.com/a/70175317
     filters = dict(
-        task_id_creator=lambda v: id_creator(v, TASK_ID_HASH_LEN),
+        task_id_creator=lambda v: task_id_creator(v),
         json_dump=lambda val: json_dump(val),
-        run_id_creator=lambda val: id_creator(val, RUN_HASH_ID_LEN),
+        run_id_creator=lambda val: run_id_creator(val),
     )
 
     def __init__(self, **kwargs):

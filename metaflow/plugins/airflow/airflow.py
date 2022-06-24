@@ -31,12 +31,12 @@ from . import airflow_utils
 from .exception import AirflowException
 from .sensors import SUPPORTED_SENSORS
 from .airflow_utils import (
-    AIRFLOW_TASK_ID,
     RUN_HASH_ID_LEN,
     RUN_ID_PREFIX,
     TASK_ID_XCOM_KEY,
     AirflowTask,
     Workflow,
+    AIRFLOW_MACROS,
 )
 from metaflow import current
 
@@ -44,21 +44,6 @@ AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "dag.py")
 
 
 class Airflow(object):
-
-    parameter_macro = "{{ params | json_dump }}"
-    task_id = AIRFLOW_TASK_ID
-    task_id_arg = "--task-id %s" % task_id
-
-    # Airflow run_ids are of the form : "manual__2022-03-15T01:26:41.186781+00:00"
-    # Such run-ids break the `metaflow.util.decompress_list`; this is why we hash the runid
-    run_id = (
-        "%s-$(echo -n {{ run_id }}-{{ dag_run.dag_id }} | md5sum | awk '{print $1}' | awk '{print substr ($0, 0, %s)}')"
-        % (RUN_ID_PREFIX, str(RUN_HASH_ID_LEN))
-    )
-    # We do echo -n because emits line breaks and we dont want to consider that since it we want same hash value when retrieved in python.
-    run_id_arg = "--run-id %s" % run_id
-    attempt = "{{ task_instance.try_number - 1 }}"
-
     def __init__(
         self,
         name,
@@ -226,12 +211,12 @@ class Airflow(object):
     ):
         """
         This function is meant to compress the input paths and it specifically doesn't use
-        `metaflow.util.compress_list` under the hood. The reason is because the `self.run_id` is a complicated macro string
+        `metaflow.util.compress_list` under the hood. The reason is because the `AIRFLOW_MACROS.RUN_ID_SHELL` is a complicated macro string
         that doesn't behave nicely with `metaflow.util.decompress_list` since the `decompress_util`
         function expects a string which doesn't contain any delimiter characters and the run-id string does.
         Hence we have a custom compression string created via `_make_input_path_compressed` function instead of `compress_list`.
         """
-        return "%s:" % (self.run_id) + ",".join(
+        return "%s:" % (AIRFLOW_MACROS.RUN_ID_SHELL) + ",".join(
             self._make_input_path(s, only_task_id=True) for s in step_names
         )
 
@@ -248,7 +233,7 @@ class Airflow(object):
         if only_task_id:
             return task_id_string
 
-        return "%s%s" % (self.run_id, task_id_string)
+        return "%s%s" % (AIRFLOW_MACROS.RUN_ID_SHELL, task_id_string)
 
     def _to_job(self, node):
         """
@@ -276,7 +261,7 @@ class Airflow(object):
             # parameters.
 
             if len(self.parameters):
-                env["METAFLOW_PARAMETERS"] = self.parameter_macro
+                env["METAFLOW_PARAMETERS"] = AIRFLOW_MACROS.PARAMETER
             input_paths = None
         else:
             # If it is not the start node then we check if there are many paths
@@ -328,11 +313,9 @@ class Airflow(object):
         k8s = Kubernetes(self.flow_datastore, self.metadata, self.environment)
         user = util.get_username()
 
-        airflow_task_id = AIRFLOW_TASK_ID
-        mf_run_id = (
-            "%s-{{ [run_id, dag_run.dag_id] | run_id_creator }}" % RUN_ID_PREFIX
-        )  # run_id_creator is added via the `user_defined_filters`
-        attempt = "{{ task_instance.try_number - 1 }}"
+        airflow_task_id = AIRFLOW_MACROS.TASK_ID
+        mf_run_id = AIRFLOW_MACROS.RUN_ID
+        attempt = AIRFLOW_MACROS.ATTEMPT
         labels = {
             "app": "metaflow",
             "app.kubernetes.io/name": "metaflow-task",
@@ -358,8 +341,8 @@ class Airflow(object):
             "METAFLOW_CARD_S3ROOT": DATASTORE_CARD_S3ROOT,
             "METAFLOW_RUN_ID": mf_run_id,
             "METAFLOW_AIRFLOW_TASK_ID": airflow_task_id,
-            "METAFLOW_AIRFLOW_DAG_RUN_ID": "{{run_id}}",
-            "METAFLOW_AIRFLOW_JOB_ID": "{{ti.job_id}}",
+            "METAFLOW_AIRFLOW_DAG_RUN_ID": AIRFLOW_MACROS.AIRFLOW_RUN_ID,
+            "METAFLOW_AIRFLOW_JOB_ID": AIRFLOW_MACROS.AIRFLOW_JOB_ID,
             "METAFLOW_ATTEMPT_NUMBER": attempt,
         }
         env.update(additional_mf_variables)
@@ -416,10 +399,10 @@ class Airflow(object):
             node_selector=k8s_deco.attributes["node_selector"],
             cmds=k8s._command(
                 self.flow.name,
-                self.run_id,
+                AIRFLOW_MACROS.RUN_ID_SHELL,
                 node.name,
-                self.task_id,
-                self.attempt,
+                AIRFLOW_MACROS.TASK_ID,
+                AIRFLOW_MACROS.ATTEMPT,
                 code_package_url=self.code_package_url,
                 step_cmds=self._step_cli(
                     node, input_paths, self.code_package_url, user_code_retries
@@ -492,7 +475,7 @@ class Airflow(object):
 
         if node.name == "start":
             # We need a separate unique ID for the special _parameters task
-            task_id_params = "%s-params" % self.task_id
+            task_id_params = "%s-params" % AIRFLOW_MACROS.TASK_ID
             # Export user-defined parameters into runtime environment
             param_file = "".join(
                 random.choice(string.ascii_lowercase) for _ in range(10)
@@ -509,7 +492,7 @@ class Airflow(object):
                 + top_level
                 + [
                     "init",
-                    self.run_id_arg,
+                    "--run-id %s" % AIRFLOW_MACROS.RUN_ID_SHELL,
                     "--task-id %s" % task_id_params,
                 ]
             )
@@ -525,7 +508,7 @@ class Airflow(object):
                 # Dump the parameters task
                 "dump",
                 "--max-value-size=0",
-                "%s/_parameters/%s" % (self.run_id, task_id_params),
+                "%s/_parameters/%s" % (AIRFLOW_MACROS.RUN_ID_SHELL, task_id_params),
             ]
             cmd = "if ! %s >/dev/null 2>/dev/null; then %s && %s; fi" % (
                 " ".join(exists),
@@ -534,14 +517,14 @@ class Airflow(object):
             )
             cmds.append(cmd)
             # set input paths for parameters
-            paths = "%s/_parameters/%s" % (self.run_id, task_id_params)
+            paths = "%s/_parameters/%s" % (AIRFLOW_MACROS.RUN_ID_SHELL, task_id_params)
 
         step = [
             "step",
             node.name,
-            self.run_id_arg,
-            self.task_id_arg,
-            "--retry-count %s" % self.attempt,
+            "--run-id %s" % AIRFLOW_MACROS.RUN_ID_SHELL,
+            "--task-id %s" % AIRFLOW_MACROS.TASK_ID,
+            "--retry-count %s" % AIRFLOW_MACROS.ATTEMPT,
             "--max-user-code-retries %d" % user_code_retries,
             "--input-paths %s" % paths,
         ]
