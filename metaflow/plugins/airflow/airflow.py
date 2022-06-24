@@ -211,12 +211,12 @@ class Airflow(object):
     ):
         """
         This function is meant to compress the input paths and it specifically doesn't use
-        `metaflow.util.compress_list` under the hood. The reason is because the `AIRFLOW_MACROS.RUN_ID_SHELL` is a complicated macro string
+        `metaflow.util.compress_list` under the hood. The reason is because the `AIRFLOW_MACROS.RUN_ID` is a complicated macro string
         that doesn't behave nicely with `metaflow.util.decompress_list` since the `decompress_util`
         function expects a string which doesn't contain any delimiter characters and the run-id string does.
         Hence we have a custom compression string created via `_make_input_path_compressed` function instead of `compress_list`.
         """
-        return "%s:" % (AIRFLOW_MACROS.RUN_ID_SHELL) + ",".join(
+        return "%s:" % (AIRFLOW_MACROS.RUN_ID) + ",".join(
             self._make_input_path(s, only_task_id=True) for s in step_names
         )
 
@@ -233,7 +233,7 @@ class Airflow(object):
         if only_task_id:
             return task_id_string
 
-        return "%s%s" % (AIRFLOW_MACROS.RUN_ID_SHELL, task_id_string)
+        return "%s%s" % (AIRFLOW_MACROS.RUN_ID, task_id_string)
 
     def _to_job(self, node):
         """
@@ -399,7 +399,7 @@ class Airflow(object):
             node_selector=k8s_deco.attributes["node_selector"],
             cmds=k8s._command(
                 self.flow.name,
-                AIRFLOW_MACROS.RUN_ID_SHELL,
+                AIRFLOW_MACROS.RUN_ID,
                 node.name,
                 AIRFLOW_MACROS.TASK_ID,
                 AIRFLOW_MACROS.ATTEMPT,
@@ -492,7 +492,7 @@ class Airflow(object):
                 + top_level
                 + [
                     "init",
-                    "--run-id %s" % AIRFLOW_MACROS.RUN_ID_SHELL,
+                    "--run-id %s" % AIRFLOW_MACROS.RUN_ID,
                     "--task-id %s" % task_id_params,
                 ]
             )
@@ -508,7 +508,7 @@ class Airflow(object):
                 # Dump the parameters task
                 "dump",
                 "--max-value-size=0",
-                "%s/_parameters/%s" % (AIRFLOW_MACROS.RUN_ID_SHELL, task_id_params),
+                "%s/_parameters/%s" % (AIRFLOW_MACROS.RUN_ID, task_id_params),
             ]
             cmd = "if ! %s >/dev/null 2>/dev/null; then %s && %s; fi" % (
                 " ".join(exists),
@@ -517,12 +517,12 @@ class Airflow(object):
             )
             cmds.append(cmd)
             # set input paths for parameters
-            paths = "%s/_parameters/%s" % (AIRFLOW_MACROS.RUN_ID_SHELL, task_id_params)
+            paths = "%s/_parameters/%s" % (AIRFLOW_MACROS.RUN_ID, task_id_params)
 
         step = [
             "step",
             node.name,
-            "--run-id %s" % AIRFLOW_MACROS.RUN_ID_SHELL,
+            "--run-id %s" % AIRFLOW_MACROS.RUN_ID,
             "--task-id %s" % AIRFLOW_MACROS.TASK_ID,
             "--retry-count %s" % AIRFLOW_MACROS.ATTEMPT,
             "--max-user-code-retries %d" % user_code_retries,
