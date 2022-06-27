@@ -177,6 +177,7 @@ def _validate_workflow(flow, graph, flow_datastore, metadata, workflow_timeout):
         flow._flow_decorators.get("airflow_schedule_interval")
         or flow._flow_decorators.get("schedule")
     )
+
     if no_scheduling and workflow_timeout is not None:
         raise AirflowException(
             "Cannot set `--workflow-timeout` for an unscheduled DAG. Add `@schedule` or `@airflow_schedule_interval` to the flow to set `--workflow-timeout`."
@@ -184,12 +185,7 @@ def _validate_workflow(flow, graph, flow_datastore, metadata, workflow_timeout):
     # check for other compute related decorators.
     # supported compute : k8s (v1), local(v2), batch(v3),
     for node in graph:
-        if node.type == "foreach":
-            raise NotSupportedException(
-                "Step *%s* is a foreach step and Foreach steps are not currently supported with Airflow."
-                % node.name
-            )
-
+        # todo : Check if there is an nesting within the foreach and throw and exception if there is a nested foreach within the code.
         if any([d.name == "batch" for d in node.decorators]):
             raise NotSupportedException(
                 "Step *%s* is marked for execution on AWS Batch with Airflow which isn't currently supported."

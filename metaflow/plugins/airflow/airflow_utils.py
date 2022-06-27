@@ -10,18 +10,60 @@ from collections import defaultdict
 from datetime import datetime, timedelta
 
 
+TASK_ID_XCOM_KEY = "metaflow_task_id"
+FOREACH_CARDINALITY_XCOM_KEY = "metaflow_foreach_cardinality"
+FOREACH_XCOM_KEY = "metaflow_foreach_indexes"
+RUN_HASH_ID_LEN = 12
+TASK_ID_HASH_LEN = 8
+RUN_ID_PREFIX = "airflow"
+AIRFLOW_FOREACH_SUPPORT_VERSION = [2, 3, 0]
+
+
 class KubernetesProviderNotFound(Exception):
     headline = "Kubernetes provider not found"
+
+
+class ForeachIncompatibleException(Exception):
+    headline = "Airflow version is incompatible to support Metaflow foreach's."
 
 
 class AirflowSensorNotFound(Exception):
     headline = "Sensor package not found"
 
 
-TASK_ID_XCOM_KEY = "metaflow_task_id"
-RUN_HASH_ID_LEN = 12
-TASK_ID_HASH_LEN = 8
-RUN_ID_PREFIX = "airflow"
+def create_absolute_version_number(version):
+    abs_version = None
+    # For all digits
+    if all(v.is_digit() for v in version.split(".")):
+        abs_version = sum(
+            [
+                (10 ** (3 - idx)) * i
+                for idx, i in enumerate([int(v) for v in version.split(".")])
+            ]
+        )
+    # For first two digits
+    elif all(v.is_digit() for v in version.split(".")[:2]):
+        abs_version = sum(
+            [
+                (10 ** (3 - idx)) * i
+                for idx, i in enumerate([int(v) for v in version.split(".")[:2]])
+            ]
+        )
+    return abs_version
+
+
+# todo : use this function to validate correct version compatibility support. 
+def _validate_dyanmic_mapping_compatibility(self):
+    from airflow.version import version
+
+    af_ver = create_absolute_version_number(version)
+    if af_ver is None or af_ver < create_absolute_version_number(
+        AIRFLOW_FOREACH_SUPPORT_VERSION
+    ):
+        ForeachIncompatibleException(
+            "Please install version airflow %s to use Airflow's Dynamic task mapping functionality."
+            % (".".join(AIRFLOW_FOREACH_SUPPORT_VERSION))
+        )
 
 
 class AIRFLOW_MACROS:
@@ -38,7 +80,7 @@ class AIRFLOW_MACROS:
     # Hence : Foreachs will require some special form of plumbing.
     # https://stackoverflow.com/questions/62962386/can-an-airflow-task-dynamically-generate-a-dag-at-runtime
     TASK_ID = (
-        "%s-{{ [run_id, ti.task_id, dag_run.dag_id ] | task_id_creator  }}"
+        "%s-{{ [run_id, ti.task_id, dag_run.dag_id, ti.map_index] | task_id_creator  }}"
         % RUN_ID_PREFIX
     )
 
@@ -56,6 +98,8 @@ class AIRFLOW_MACROS:
 
     AIRFLOW_JOB_ID = "{{ ti.job_id }}"
 
+    FOREACH_SPLIT_INDEX = "{{ ti.map_index }}"
+
 
 class SensorNames:
     EXTERNAL_TASK_SENSOR = "ExternalTaskSensor"
@@ -69,17 +113,23 @@ class SensorNames:
 
 def run_id_creator(val):
     # join `[dag-id,run-id]` of airflow dag.
-    return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:RUN_HASH_ID_LEN]
+    return hashlib.md5("-".join([str(x) for x in val]).encode("utf-8")).hexdigest()[
+        :RUN_HASH_ID_LEN
+    ]
 
 
 def task_id_creator(val):
     # join `[dag-id,run-id]` of airflow dag.
-    return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:TASK_ID_HASH_LEN]
+    return hashlib.md5("-".join([str(x) for x in val]).encode("utf-8")).hexdigest()[
+        :TASK_ID_HASH_LEN
+    ]
 
 
 def id_creator(val, hash_len):
     # join `[dag-id,run-id]` of airflow dag.
-    return hashlib.md5("-".join(val).encode("utf-8")).hexdigest()[:hash_len]
+    return hashlib.md5("-".join([str(x) for x in val]).encode("utf-8")).hexdigest()[
+        :hash_len
+    ]
 
 
 def json_dump(val):
@@ -122,6 +172,7 @@ class AirflowDAGArgs(object):
         task_id_creator=lambda v: task_id_creator(v),
         json_dump=lambda val: json_dump(val),
         run_id_creator=lambda val: run_id_creator(val),
+        join_list=lambda x: ",".join(list(x)),
     )
 
     def __init__(self, **kwargs):
@@ -184,9 +235,9 @@ def _kubernetes_pod_operator_args(operator_args):
             # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user?
         }
     )
-    # Below cannot be passed in dictionary form.
-    # Airflow accepts `V1EnvVar` in JSON form but once the JSON array has
-    # hetrogenious data-types (`V1EnvVar` with `value` and `value_from`)
+    # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries
+    # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via
+    # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function
     additional_env_vars = [
         client.V1EnvVar(
             name=k,
@@ -201,17 +252,14 @@ def _kubernetes_pod_operator_args(operator_args):
             "METAFLOW_KUBERNETES_SERVICE_ACCOUNT_NAME": "spec.serviceAccountName",
         }.items()
     ]
-    args["env_vars"] = [
-        client.V1EnvVar(name=x["name"], value=x["value"]) for x in args["env_vars"]
-    ] + additional_env_vars
+    args["pod_runtime_info_envs"] = additional_env_vars
 
-    # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries
-    # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via
-    # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function
-    resources = args.get("resources")
-    args["resources"] = client.V1ResourceRequirements(
-        requests=resources["requests"],
-    )
+    # TODO (AIRFLOW-BUG): see if this can be fixed after the resolve the issue here : https://github.com/apache/airflow/issues/24669
+    del args["resources"]
+    # resources = args.get("resources")
+    # args["resources"] = client.V1ResourceRequirements(
+    #     requests=resources["requests"],
+    # )
     if operator_args.get("execution_timeout"):
         args["execution_timeout"] = timedelta(
             **operator_args.get(
@@ -234,6 +282,8 @@ def _parse_sensor_args(name, kwargs):
 
 
 def _get_sensor(name):
+    # from airflow import XComArg
+    # XComArg()
     if name == SensorNames.EXTERNAL_TASK_SENSOR:
         # ExternalTaskSensors uses an execution_date of a dag to
         # determine the appropriate DAG.
@@ -261,12 +311,85 @@ def _get_sensor(name):
         return SqlSensor
 
 
+def get_metaflow_kuberentes_operator():
+    try:
+        from airflow.contrib.operators.kubernetes_pod_operator import (
+            KubernetesPodOperator,
+        )
+    except ImportError:
+        try:
+            from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import (
+                KubernetesPodOperator,
+            )
+        except ImportError as e:
+            raise KubernetesProviderNotFound(
+                "This DAG utilizes `KubernetesPodOperator`. "
+                "Install the Airflow Kubernetes provider using "
+                "`%s -m pip install apache-airflow-providers-cncf-kubernetes`"
+                % sys.executable
+            )
+
+    class MetaflowKubernetesOperator(KubernetesPodOperator):
+        """
+        ## Why Inherit the `KubernetesPodOperator` class ?
+
+        Two key reasons :
+
+        1. So that we can override the `execute` method.
+        The only change we introduce to the method is to explicitly modify xcom relating to `return_values`.
+        We do this so that the `XComArg` object can work with `expand` function.
+
+        2. So that we can introduce an keyword argument named `mapper_arr`.
+        This keyword argument can help as a dummy argument for the `KubernetesPodOperator.partial().expand` method. Any Airflow Operator can be dynamically mapped to runtime artifacts using `Operator.partial(**kwargs).extend(**mapper_kwargs)` post the introduction of [Dynamic Task Mapping](https://airflow.apache.org/docs/apache-airflow/stable/concepts/dynamic-task-mapping.html).
+        The `expand` function takes keyword arguments taken by the operator.
+
+        ## Why override the `execute` method  ?
+
+        When we dynamically map vanilla Airflow operators with artifacts generated at runtime, we need to pass that information via `XComArg` to a operator's keyword argument in the `expand` [function](https://airflow.apache.org/docs/apache-airflow/stable/concepts/dynamic-task-mapping.html#mapping-over-result-of-classic-operators).
+        The `XComArg` object retrieves XCom values for a particular task based on a `key`, the default key being `return_values`.
+        Oddly dynamic task mapping [doesn't support XCom values from any other key except](https://github.com/apache/airflow/blob/8a34d25049a060a035d4db4a49cd4a0d0b07fb0b/airflow/models/mappedoperator.py#L150) `return_values`
+        The values of XCom passed by the `KubernetesPodOperator` are mapped to the `return_values` XCom key.
+
+        The biggest problem this creates is that the values of the Foreach cadinality are stored inside the dictionary of `return_values` and cannot   be accessed trivially like : `XComArg(task)['foreach_key']` since they are resolved during runtime.
+        This puts us in a bind since the only xcom we can retrieve is the full dictionary and we cannot pass that as the iteratable for the mapper tasks.
+        Hence we inherit the `execute` method and push custom xcom keys (needed by downstream tasks such as metaflow taskids) and modify `return_values` captured from the container whenever a foreach related xcom is passed.
+        When we encounter a foreach xcom we resolve the cardinality which is passed to an actual list and return that as `return_values`.
+        This is later useful in the `Workflow.compile` where the operator's `expand` method is called and we are able to retrieve the xcom value.
+        """
+
+        def __init__(self, *args, mapper_arr=None, **kwargs) -> None:
+            super().__init__(*args, **kwargs)
+            self.mapper_arr = mapper_arr
+
+        def execute(self, context):
+            result = super().execute(context)
+            if result is None:
+                return
+            ti = context["ti"]
+            if TASK_ID_XCOM_KEY in result:
+                ti.xcom_push(
+                    key=TASK_ID_XCOM_KEY,
+                    value=result[TASK_ID_XCOM_KEY],
+                )
+            if FOREACH_CARDINALITY_XCOM_KEY in result:
+                return list(range(result[FOREACH_CARDINALITY_XCOM_KEY]))
+
+    return MetaflowKubernetesOperator
+
+
 class AirflowTask(object):
-    def __init__(self, name, operator_type="kubernetes", flow_name=None):
+    def __init__(
+        self, name, operator_type="kubernetes", flow_name=None, is_mapper_node=False
+    ):
         self.name = name
+        self._is_mapper_node = is_mapper_node
         self._operator_args = None
         self._operator_type = operator_type
         self._flow_name = flow_name
+
+    @property
+    def is_mapper_node(self):
+        return self._is_mapper_node
 
     def set_operator_args(self, **kwargs):
         self._operator_args = kwargs
@@ -282,6 +405,7 @@ class AirflowTask(object):
     def to_dict(self):
         return {
             "name": self.name,
+            "is_mapper_node": self._is_mapper_node,
             "operator_type": self._operator_type,
             "operator_args": self._operator_args,
         }
@@ -289,8 +413,12 @@ class AirflowTask(object):
     @classmethod
     def from_dict(cls, task_dict, flow_name=None):
         op_args = {} if not "operator_args" in task_dict else task_dict["operator_args"]
+        is_mapper_node = (
+            False if "is_mapper_node" not in task_dict else task_dict["is_mapper_node"]
+        )
         return cls(
             task_dict["name"],
+            is_mapper_node=is_mapper_node,
             operator_type=task_dict["operator_type"]
             if "operator_type" in task_dict
             else "kubernetes",
@@ -298,28 +426,21 @@ class AirflowTask(object):
         ).set_operator_args(**op_args)
 
     def _kubenetes_task(self):
-        try:
-            from airflow.contrib.operators.kubernetes_pod_operator import (
-                KubernetesPodOperator,
-            )
-        except ImportError:
-            try:
-                from airflow.providers.cncf.kubernetes.operators.kubernetes_pod import (
-                    KubernetesPodOperator,
-                )
-            except ImportError as e:
-                raise KubernetesProviderNotFound(
-                    "This DAG utilizes `KubernetesPodOperator`. "
-                    "Install the Airflow Kubernetes provider using "
-                    "`%s -m pip install apache-airflow-providers-cncf-kubernetes`"
-                    % sys.executable
-                )
+        MetaflowKubernetesOperator = get_metaflow_kuberentes_operator()
         k8s_args = _kubernetes_pod_operator_args(self._operator_args)
-        return KubernetesPodOperator(**k8s_args)
+        return MetaflowKubernetesOperator(**k8s_args)
+
+    def _kubernetes_mapper_task(self):
+        MetaflowKubernetesOperator = get_metaflow_kuberentes_operator()
+        k8s_args = _kubernetes_pod_operator_args(self._operator_args)
+        return MetaflowKubernetesOperator.partial(**k8s_args)
 
     def to_task(self):
         if self._operator_type == "kubernetes":
-            return self._kubenetes_task()
+            if not self.is_mapper_node:
+                return self._kubenetes_task()
+            else:
+                return self._kubernetes_mapper_task()
         elif self._operator_type in SensorNames.get_supported_sensors():
             return self._make_sensor()
 
@@ -389,6 +510,7 @@ class Workflow(object):
 
     def compile(self):
         from airflow import DAG
+        from airflow import XComArg
 
         params_dict = self._construct_params()
         # DAG Params can be seen here :
@@ -406,6 +528,9 @@ class Workflow(object):
                 task = self.states[node].to_task()
                 if parents:
                     for parent in parents:
+                        # Handle foreach nodes.
+                        if self.states[node].is_mapper_node:
+                            task = task.expand(mapper_arr=XComArg(parent))
                         parent >> task
                 return [task]  # Return Parent
 
