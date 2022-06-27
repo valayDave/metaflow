@@ -7,7 +7,12 @@ from metaflow.decorators import FlowDecorator, StepDecorator
 from metaflow.metadata import MetaDatum
 from .exception import AirflowException
 
-from .airflow_utils import TASK_ID_XCOM_KEY, AirflowTask, SensorNames
+from .airflow_utils import (
+    TASK_ID_XCOM_KEY,
+    FOREACH_CARDINALITY_XCOM_KEY,
+    AirflowTask,
+    SensorNames,
+)
 
 K8S_XCOM_DIR_PATH = "/airflow/xcom"
 
@@ -97,8 +102,14 @@ class AirflowInternalDecorator(StepDecorator):
 
         # Register book-keeping metadata for debugging.
         metadata.register_metadata(run_id, step_name, task_id, entries)
-        push_xcom_values(
-            {
-                TASK_ID_XCOM_KEY: os.environ["METAFLOW_AIRFLOW_TASK_ID"],
-            }
-        )
+
+    def task_finished(
+        self, step_name, flow, graph, is_task_ok, retry_count, max_user_code_retries
+    ):
+        # This will pass the xcom when the task finishes.
+        xcom_values = {
+            TASK_ID_XCOM_KEY: os.environ["METAFLOW_AIRFLOW_TASK_ID"],
+        }
+        if graph[step_name].type == "foreach":
+            xcom_values[FOREACH_CARDINALITY_XCOM_KEY] = flow._foreach_num_splits
+        push_xcom_values(xcom_values)
