@@ -220,11 +220,23 @@ class Airflow(object):
             self._make_input_path(s, only_task_id=True) for s in step_names
         )
 
+    def _make_foreach_input_path(self, step_name):
+        return (
+            "%s/%s/:{{ task_instance.xcom_pull(task_ids='%s',key='%s') | join_list }}"
+            % (
+                AIRFLOW_MACROS.RUN_ID,
+                step_name,
+                step_name,
+                TASK_ID_XCOM_KEY,
+            )
+        )
+
     def _make_input_path(self, step_name, only_task_id=False):
         # This is set using the `airflow_internal` decorator.
         # This will pull the `return_value` xcom which holds a dictionary.
         # This helps pass state.
-        task_id_string = "/%s/{{ task_instance.xcom_pull(task_ids='%s')['%s'] }}" % (
+        # The `TASK_ID_XCOM_KEY` is set via the `MetaflowKubernetesOperator`
+        task_id_string = "/%s/{{ task_instance.xcom_pull(task_ids='%s',key='%s') }}" % (
             step_name,
             step_name,
             TASK_ID_XCOM_KEY,
@@ -249,6 +261,10 @@ class Airflow(object):
         if env_deco:
             env = env_deco[0].attributes["vars"]
 
+        is_foreach_join = (
+            node.type == "join" and self.graph[node.split_parents[-1]].type == "foreach"
+        )
+
         # The Below If/Else Block handle "Input Paths".
         # Input Paths help manage dataflow across the graph.
         if node.name == "start":
@@ -271,7 +287,10 @@ class Airflow(object):
                     "Parallel steps are not supported yet with Airflow."
                 )
 
-            if len(node.in_funcs) == 1:
+            if is_foreach_join:
+                input_paths = self._make_foreach_input_path(node.in_funcs[0])
+
+            elif len(node.in_funcs) == 1:
                 # set input paths where this is only one parent node
                 # The parent-task-id is passed via the xcom; There is no other way to get that.
                 # One key thing about xcoms is that they are immutable and only accepted if the task
@@ -283,7 +302,7 @@ class Airflow(object):
                 # this is a split scenario where there can be more than one input paths.
                 input_paths = self._make_input_path_compressed(node.in_funcs)
 
-            env["METAFLOW_INPUT_PATHS"] = input_paths
+            # env["METAFLOW_INPUT_PATHS"] = input_paths
 
         env["METAFLOW_CODE_URL"] = self.code_package_url
         env["METAFLOW_FLOW_NAME"] = self.flow.name
@@ -313,9 +332,6 @@ class Airflow(object):
         k8s = Kubernetes(self.flow_datastore, self.metadata, self.environment)
         user = util.get_username()
 
-        airflow_task_id = AIRFLOW_MACROS.TASK_ID
-        mf_run_id = AIRFLOW_MACROS.RUN_ID
-        attempt = AIRFLOW_MACROS.ATTEMPT
         labels = {
             "app": "metaflow",
             "app.kubernetes.io/name": "metaflow-task",
@@ -339,14 +355,13 @@ class Airflow(object):
             "METAFLOW_KUBERNETES_WORKLOAD": str(1),
             "METAFLOW_RUNTIME_ENVIRONMENT": "kubernetes",
             "METAFLOW_CARD_S3ROOT": DATASTORE_CARD_S3ROOT,
-            "METAFLOW_RUN_ID": mf_run_id,
-            "METAFLOW_AIRFLOW_TASK_ID": airflow_task_id,
+            "METAFLOW_RUN_ID": AIRFLOW_MACROS.RUN_ID,
+            "METAFLOW_AIRFLOW_TASK_ID": AIRFLOW_MACROS.TASK_ID,
             "METAFLOW_AIRFLOW_DAG_RUN_ID": AIRFLOW_MACROS.AIRFLOW_RUN_ID,
             "METAFLOW_AIRFLOW_JOB_ID": AIRFLOW_MACROS.AIRFLOW_JOB_ID,
-            "METAFLOW_ATTEMPT_NUMBER": attempt,
+            "METAFLOW_ATTEMPT_NUMBER": AIRFLOW_MACROS.ATTEMPT,
         }
         env.update(additional_mf_variables)
-
         service_account = (
             KUBERNETES_SERVICE_ACCOUNT
             if k8s_deco.attributes["service_account"] is None
@@ -532,6 +547,13 @@ class Airflow(object):
             step.extend("--tag %s" % tag for tag in self.tags)
         if self.namespace is not None:
             step.append("--namespace=%s" % self.namespace)
+
+        parent_is_foreach = any(  # The immediate parent is a foreach node.
+            self.graph[n].type == "foreach" for n in node.in_funcs
+        )
+        if parent_is_foreach:
+            step.append("--split-index %s" % AIRFLOW_MACROS.FOREACH_SPLIT_INDEX)
+
         cmds.append(" ".join(entrypoint + top_level + step))
         return cmds
 
@@ -547,23 +569,27 @@ class Airflow(object):
         return af_tasks
 
     def compile(self):
+        from metaflow.graph import DAGNode
 
         # Visit every node of the flow and recursively build the state machine.
-        def _visit(node, workflow, exit_node=None):
+        def _visit(node: DAGNode, workflow, exit_node=None):
             if node.parallel_foreach:
                 raise AirflowException(
                     "Deploying flows with @parallel decorator(s) "
                     "to Airflow is not supported currently."
                 )
-
-            state = AirflowTask(node.name).set_operator_args(**self._to_job(node))
-
+            parent_is_foreach = any(  # Any immediate parent is a foreach node.
+                self.graph[n].type == "foreach" for n in node.in_funcs
+            )
+            state = AirflowTask(
+                node.name, is_mapper_node=parent_is_foreach
+            ).set_operator_args(**self._to_job(node))
             if node.type == "end":
                 workflow.add_state(state)
 
             # Continue linear assignment within the (sub)workflow if the node
             # doesn't branch or fork.
-            elif node.type in ("start", "linear", "join"):
+            elif node.type in ("start", "linear", "join", "foreach"):
                 workflow.add_state(state)
                 _visit(
                     self.graph[node.out_funcs[0]],
@@ -577,14 +603,13 @@ class Airflow(object):
                         self.graph[func],
                         workflow,
                     )
-
-            # We should only get here for foreach branches.
             else:
                 raise AirflowException(
                     "Node type *%s* for  step *%s* "
                     "is not currently supported by "
                     "Airflow." % (node.type, node.name)
                 )
+
             return workflow
 
         # set max active tasks here , For more info check here :
