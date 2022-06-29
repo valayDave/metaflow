@@ -130,13 +130,18 @@ class Airflow(object):
     def _get_retries(self, node):
         max_user_code_retries = 0
         max_error_retries = 0
+        foreach_default_retry = 1
         # Different decorators may have different retrying strategies, so take
         # the max of them.
         for deco in node.decorators:
             user_code_retries, error_retries = deco.step_task_retry_count()
             max_user_code_retries = max(max_user_code_retries, user_code_retries)
             max_error_retries = max(max_error_retries, error_retries)
-
+        parent_is_foreach = any(  # The immediate parent is a foreach node.
+            self.graph[n].type == "foreach" for n in node.in_funcs
+        )
+        if parent_is_foreach:
+            max_user_code_retries + foreach_default_retry
         return max_user_code_retries, max_user_code_retries + max_error_retries
 
     def _get_retry_delay(self, node):
