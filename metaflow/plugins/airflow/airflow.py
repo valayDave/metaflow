@@ -436,6 +436,7 @@ class Airflow(object):
             env_vars=[dict(name=k, value=v) for k, v in env.items()],
             labels=labels,
             task_id=node.name,
+            startup_timeout_seconds=60*60,
             in_cluster=True,
             get_logs=True,
             do_xcom_push=True,
