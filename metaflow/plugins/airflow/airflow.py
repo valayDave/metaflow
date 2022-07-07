@@ -140,6 +140,7 @@ class Airflow(object):
         parent_is_foreach = any(  # The immediate parent is a foreach node.
             self.graph[n].type == "foreach" for n in node.in_funcs
         )
+
         if parent_is_foreach:
             max_user_code_retries + foreach_default_retry
         return max_user_code_retries, max_user_code_retries + max_error_retries
@@ -436,7 +437,7 @@ class Airflow(object):
             env_vars=[dict(name=k, value=v) for k, v in env.items()],
             labels=labels,
             task_id=node.name,
-            startup_timeout_seconds=60*60,
+            startup_timeout_seconds=60 * 60,
             in_cluster=True,
             get_logs=True,
             do_xcom_push=True,
@@ -675,7 +676,6 @@ class Airflow(object):
             # If set on a task, doesn’t run the task in the current DAG run if the previous run of the task has failed.
             "depends_on_past": False,
             # TODO: Enable emails
-            "retries": 0,
             "execution_timeout": timedelta(days=5),
             "retry_delay": timedelta(seconds=200),
             # check https://airflow.apache.org/docs/apache-airflow/stable/_api/airflow/models/baseoperator/index.html?highlight=retry_delay#airflow.models.baseoperator.BaseOperatorMeta
