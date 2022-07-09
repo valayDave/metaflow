@@ -52,7 +52,7 @@ def create_absolute_version_number(version):
     return abs_version
 
 
-# todo : use this function to validate correct version compatibility support. 
+# TODO (Final-comments) : use this function to validate correct version compatibility support.
 def _validate_dyanmic_mapping_compatibility(self):
     from airflow.version import version
 
@@ -235,6 +235,7 @@ def _kubernetes_pod_operator_args(operator_args):
             # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user?
         }
     )
+    # TODO (Final-comments) : Remove this comment and also remove parsing of env_vars from operator.
     # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries
     # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via
     # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function
@@ -245,6 +246,7 @@ def _kubernetes_pod_operator_args(operator_args):
                 field_ref=client.V1ObjectFieldSelector(field_path=str(v))
             ),
         )
+        # TODO (Final-comments) :Map this env var setting to `pod_runtime_info_envs` in airflow.py and remove this from here.
         for k, v in {
             "METAFLOW_KUBERNETES_POD_NAMESPACE": "metadata.namespace",
             "METAFLOW_KUBERNETES_POD_NAME": "metadata.name",
@@ -255,6 +257,7 @@ def _kubernetes_pod_operator_args(operator_args):
     args["pod_runtime_info_envs"] = additional_env_vars
 
     # TODO (AIRFLOW-BUG): see if this can be fixed after the resolve the issue here : https://github.com/apache/airflow/issues/24669
+    # TODO (Final-comments) : Wait for airflow to upgrade and and fix this bug. : https://github.com/apache/airflow/pull/24673
     del args["resources"]
     # resources = args.get("resources")
     # args["resources"] = client.V1ResourceRequirements(

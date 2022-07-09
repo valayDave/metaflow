@@ -30,6 +30,7 @@ def push_xcom_values(xcom_dict):
         json.dump(xcom_dict, f)
 
 
+# TODO (Final-comments) : Remove this decorator and also update the documentation for the same.
 class AirflowScheduleIntervalDecorator(FlowDecorator):
     name = "airflow_schedule_interval"
     defaults = {"cron": None, "weekly": False, "daily": True, "hourly": False}

@@ -6,6 +6,8 @@ from metaflow import S3, current, decorators
 from metaflow._vendor import click
 from metaflow.exception import MetaflowException
 from metaflow.package import MetaflowPackage
+
+# TODO (Final-comments) : Remove unused imports from everywhere.
 from metaflow.plugins import EnvironmentDecorator, KubernetesDecorator
 from metaflow.util import get_username
 
@@ -13,6 +15,8 @@ from .airflow import Airflow
 from .exception import AirflowException, NotSupportedException
 
 VALID_NAME = re.compile("[^a-zA-Z0-9_\-\.]")
+
+# TODO (Final-comments) : Create CLI checks for resolving production token.
 
 
 @click.group()
@@ -185,7 +189,7 @@ def _validate_workflow(flow, graph, flow_datastore, metadata, workflow_timeout):
     # check for other compute related decorators.
     # supported compute : k8s (v1), local(v2), batch(v3),
     for node in graph:
-        # todo : Check if there is an nesting within the foreach and throw and exception if there is a nested foreach within the code.
+        # TODO (Final-Comments) : Check if there is an nesting within the foreach and throw and exception if there is a nested foreach within the code.
         if any([d.name == "batch" for d in node.decorators]):
             raise NotSupportedException(
                 "Step *%s* is marked for execution on AWS Batch with Airflow which isn't currently supported."

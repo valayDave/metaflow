@@ -322,11 +322,6 @@ class Airflow(object):
         metaflow_version["flow_name"] = self.graph.name
         env["METAFLOW_VERSION"] = json.dumps(metaflow_version)
 
-        # Todo : Find ways to pass state using for the below usecases:
-        #   1. To set the cardinality of foreaches
-        #   2. To set the input paths from the parent steps of a foreach join.
-        #   3. To read the input paths in a foreach join.
-
         # Extract the k8s decorators for constructing the arguments of the K8s Pod Operator on Airflow.
         k8s_deco = [deco for deco in node.decorators if deco.name == "kubernetes"][0]
         user_code_retries, _ = self._get_retries(node)
@@ -357,8 +352,9 @@ class Airflow(object):
             "METAFLOW_DATATOOLS_S3ROOT": DATATOOLS_S3ROOT,
             "METAFLOW_DEFAULT_DATASTORE": "s3",
             "METAFLOW_DEFAULT_METADATA": "service",
-            # Question for (savin) : what does `METAFLOW_KUBERNETES_WORKLOAD` do ?
-            "METAFLOW_KUBERNETES_WORKLOAD": str(1),
+            "METAFLOW_KUBERNETES_WORKLOAD": str(
+                1
+            ),  # This is used by kubernetes decorator.
             "METAFLOW_RUNTIME_ENVIRONMENT": "kubernetes",
             "METAFLOW_CARD_S3ROOT": DATASTORE_CARD_S3ROOT,
             "METAFLOW_RUN_ID": AIRFLOW_MACROS.RUN_ID,
