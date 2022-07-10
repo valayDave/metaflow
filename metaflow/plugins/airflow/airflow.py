@@ -433,6 +433,9 @@ class Airflow(object):
             env_vars=[dict(name=k, value=v) for k, v in env.items()],
             labels=labels,
             task_id=node.name,
+            # There is no global configuration for `startup_timeout_seconds`.
+            # We need to always add it at a task level.
+            # TODO (Final-Comments) : Should this be allowed at a CLI level.
             startup_timeout_seconds=60 * 60,
             in_cluster=True,
             get_logs=True,
