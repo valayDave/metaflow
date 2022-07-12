@@ -1,11 +1,6 @@
 import hashlib
 import json
-import os
-import random
-import re
 import sys
-import time
-import typing
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -17,6 +12,8 @@ RUN_HASH_ID_LEN = 12
 TASK_ID_HASH_LEN = 8
 RUN_ID_PREFIX = "airflow"
 AIRFLOW_FOREACH_SUPPORT_VERSION = [2, 3, 0]
+AIRFLOW_MIN_SUPPORT_VERSION = [2, 0, 0]
+KUBERNETES_PROVIDER_FOREACH_VERSION = [5, 0, 0]
 
 
 class KubernetesProviderNotFound(Exception):
@@ -25,6 +22,25 @@ class KubernetesProviderNotFound(Exception):
 
 class ForeachIncompatibleException(Exception):
     headline = "Airflow version is incompatible to support Metaflow foreach's."
+
+
+class IncompatibleVersionException(Exception):
+    headline = "Metaflow is incompatible with current version of Airflow."
+
+    def __init__(self, version_number) -> None:
+        msg = (
+            "Airflow version %s is incompatible with Metaflow. Metaflow requires Airflow a minimum version %s"
+            % (version_number, ".".join(AIRFLOW_MIN_SUPPORT_VERSION))
+        )
+        super().__init__(msg)
+
+
+class IncompatibleKubernetesProviderVersionException(Exception):
+    headline = (
+        "Kubernetes Provider version is incompatible with Metaflow foreach's. "
+        "Install the provider via "
+        "`%s -m pip install apache-airflow-providers-cncf-kubernetes==%s`"
+    ) % (sys.executable, ".".join(KUBERNETES_PROVIDER_FOREACH_VERSION))
 
 
 class AirflowSensorNotFound(Exception):
@@ -52,8 +68,7 @@ def create_absolute_version_number(version):
     return abs_version
 
 
-# TODO (Final-comments) : use this function to validate correct version compatibility support.
-def _validate_dyanmic_mapping_compatibility(self):
+def _validate_dyanmic_mapping_compatibility():
     from airflow.version import version
 
     af_ver = create_absolute_version_number(version)
@@ -61,9 +76,43 @@ def _validate_dyanmic_mapping_compatibility(self):
         AIRFLOW_FOREACH_SUPPORT_VERSION
     ):
         ForeachIncompatibleException(
-            "Please install version airflow %s to use Airflow's Dynamic task mapping functionality."
+            "Please install airflow version %s to use Airflow's Dynamic task mapping functionality."
             % (".".join(AIRFLOW_FOREACH_SUPPORT_VERSION))
         )
+
+
+def get_kubernetes_provider_version():
+    try:
+        from airflow.providers.cncf.kubernetes.get_provider_info import (
+            get_provider_info,
+        )
+    except ImportError as e:
+        raise KubernetesProviderNotFound(
+            "This DAG utilizes `KubernetesPodOperator`. "
+            "Install the Airflow Kubernetes provider using "
+            "`%s -m pip install apache-airflow-providers-cncf-kubernetes`"
+            % sys.executable
+        )
+    return get_provider_info()["versions"][0]
+
+
+def _validate_minimum_airflow_version():
+    from airflow.version import version
+
+    af_ver = create_absolute_version_number(version)
+    if af_ver is None or af_ver < create_absolute_version_number(
+        AIRFLOW_MIN_SUPPORT_VERSION
+    ):
+        raise IncompatibleVersionException(version)
+
+
+def _check_foreach_compatible_kubernetes_provider():
+    provider_version = get_kubernetes_provider_version()
+    ver = create_absolute_version_number(provider_version)
+    if ver is None or ver < create_absolute_version_number(
+        KUBERNETES_PROVIDER_FOREACH_VERSION
+    ):
+        raise IncompatibleKubernetesProviderVersionException()
 
 
 class AIRFLOW_MACROS:
@@ -235,10 +284,9 @@ def _kubernetes_pod_operator_args(operator_args):
             # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user?
         }
     )
-    # TODO (Final-comments) : Remove this comment and also remove parsing of env_vars from operator.
-    # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries
-    # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via
-    # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function
+    # We need to explicity add the `client.V1EnvVar` over here because
+    # `pod_runtime_info_envs` doesn't accept arguments in dictionary form and strictly
+    # Requires objects of type `client.V1EnvVar`
     additional_env_vars = [
         client.V1EnvVar(
             name=k,
@@ -246,7 +294,6 @@ def _kubernetes_pod_operator_args(operator_args):
                 field_ref=client.V1ObjectFieldSelector(field_path=str(v))
             ),
         )
-        # TODO (Final-comments) :Map this env var setting to `pod_runtime_info_envs` in airflow.py and remove this from here.
         for k, v in {
             "METAFLOW_KUBERNETES_POD_NAMESPACE": "metadata.namespace",
             "METAFLOW_KUBERNETES_POD_NAME": "metadata.name",
@@ -256,6 +303,9 @@ def _kubernetes_pod_operator_args(operator_args):
     ]
     args["pod_runtime_info_envs"] = additional_env_vars
 
+    # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries
+    # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via
+    # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function
     # TODO (AIRFLOW-BUG): see if this can be fixed after the resolve the issue here : https://github.com/apache/airflow/issues/24669
     # TODO (Final-comments) : Wait for airflow to upgrade and and fix this bug. : https://github.com/apache/airflow/pull/24673
     del args["resources"]
@@ -449,9 +499,10 @@ class AirflowTask(object):
 
 
 class Workflow(object):
-    def __init__(self, file_path=None, graph_structure=None, **kwargs):
+    def __init__(self, file_path=None, graph_structure=None, metadata=None, **kwargs):
         self._dag_instantiation_params = AirflowDAGArgs(**kwargs)
         self._file_path = file_path
+        self._metadata = metadata
         tree = lambda: defaultdict(tree)
         self.states = tree()
         self.metaflow_params = None
@@ -465,6 +516,7 @@ class Workflow(object):
 
     def to_dict(self):
         return dict(
+            metadata=self._metadata,
             graph_structure=self.graph_structure,
             states={s: v.to_dict() for s, v in self.states.items()},
             dag_instantiation_params=self._dag_instantiation_params.serialize(),
@@ -480,6 +532,7 @@ class Workflow(object):
         re_cls = cls(
             file_path=data_dict["file_path"],
             graph_structure=data_dict["graph_structure"],
+            metadata={} if "metadata" not in data_dict else data_dict["metadata"],
         )
         re_cls._dag_instantiation_params = AirflowDAGArgs.deserialize(
             data_dict["dag_instantiation_params"]
@@ -514,6 +567,13 @@ class Workflow(object):
     def compile(self):
         from airflow import DAG
         from airflow import XComArg
+
+        _validate_minimum_airflow_version()
+
+        if self._metadata["contains_foreach"]:
+            _validate_dyanmic_mapping_compatibility()
+            # Todo : uncomment below line once airflow releases the patch.
+            # _check_foreach_compatible_kubernetes_provider()
 
         params_dict = self._construct_params()
         # DAG Params can be seen here :

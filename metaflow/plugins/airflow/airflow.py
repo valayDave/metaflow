@@ -1,4 +1,3 @@
-import base64
 import json
 import os
 import random
@@ -31,8 +30,6 @@ from . import airflow_utils
 from .exception import AirflowException
 from .sensors import SUPPORTED_SENSORS
 from .airflow_utils import (
-    RUN_HASH_ID_LEN,
-    RUN_ID_PREFIX,
     TASK_ID_XCOM_KEY,
     AirflowTask,
     Workflow,
@@ -574,11 +571,15 @@ class Airflow(object):
             self._depends_on_upstream_sensors = True
         return af_tasks
 
-    def compile(self):
-        from metaflow.graph import DAGNode
+    def _contains_foreach(self):
+        for node in self.graph:
+            if node.type == "foreach":
+                return True
+        return False
 
+    def compile(self):
         # Visit every node of the flow and recursively build the state machine.
-        def _visit(node: DAGNode, workflow, exit_node=None):
+        def _visit(node, workflow, exit_node=None):
             if node.parallel_foreach:
                 raise AirflowException(
                     "Deploying flows with @parallel decorator(s) "
@@ -642,6 +643,7 @@ class Airflow(object):
             tags=self.tags,
             file_path=self._file_path,
             graph_structure=self.graph_structure,
+            metadata=dict(contains_foreach=self._contains_foreach()),
             **airflow_dag_args
         )
         workflow = _visit(self.graph["start"], workflow)

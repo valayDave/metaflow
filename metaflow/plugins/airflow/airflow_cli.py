@@ -2,13 +2,12 @@ import os
 import re
 import sys
 
-from metaflow import S3, current, decorators
+from metaflow import current, decorators
 from metaflow._vendor import click
 from metaflow.exception import MetaflowException
 from metaflow.package import MetaflowPackage
 
-# TODO (Final-comments) : Remove unused imports from everywhere.
-from metaflow.plugins import EnvironmentDecorator, KubernetesDecorator
+from metaflow.plugins import KubernetesDecorator
 from metaflow.util import get_username
 
 from .airflow import Airflow
