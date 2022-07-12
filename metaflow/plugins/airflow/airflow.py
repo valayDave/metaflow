@@ -1,3 +1,4 @@
+from io import BytesIO
 import json
 import os
 import random
@@ -41,6 +42,9 @@ AIRFLOW_DEPLOY_TEMPLATE_FILE = os.path.join(os.path.dirname(__file__), "dag.py")
 
 
 class Airflow(object):
+
+    TOKEN_STORAGE_ROOT = "mf.airflow"
+
     def __init__(
         self,
         name,
@@ -53,6 +57,7 @@ class Airflow(object):
         environment,
         event_logger,
         monitor,
+        production_token,
         tags=None,
         namespace=None,
         username=None,
@@ -86,6 +91,40 @@ class Airflow(object):
         self.workflow_timeout = workflow_timeout
         self.schedule = self._scheduling_interval()
         self.parameters = self._process_parameters()
+        self.production_token = production_token
+
+    @classmethod
+    def get_existing_deployment(cls, name, flow_datastore):
+        _backend = flow_datastore._storage_impl
+        token_paths = _backend.list_content([cls.get_token_path(name)])
+        if len(token_paths) == 0:
+            return None
+
+        with _backend.load_bytes([token_paths[0]]) as get_results:
+            for _, path, _ in get_results:
+                if path is not None:
+                    with open(path, "r") as f:
+                        data = json.loads(f.read())
+                    return (data["owner"], data["token"])
+
+    @classmethod
+    def get_token_path(cls, name):
+        return os.path.join(cls.TOKEN_STORAGE_ROOT, name)
+
+    @classmethod
+    def save_deployment_token(cls, owner, token, flow_datastore):
+        _backend = flow_datastore._storage_impl
+        _backend.save_bytes(
+            [
+                (
+                    cls.get_token_path(token),
+                    BytesIO(
+                        bytes(json.dumps({"token": token, "owner": owner}), "utf-8")
+                    ),
+                )
+            ],
+            overwrite=False,
+        )
 
     def _scheduling_interval(self):
         """
@@ -317,6 +356,7 @@ class Airflow(object):
 
         metaflow_version = self.environment.get_environment_info()
         metaflow_version["flow_name"] = self.graph.name
+        metaflow_version["production_token"] = self.production_token
         env["METAFLOW_VERSION"] = json.dumps(metaflow_version)
 
         # Extract the k8s decorators for constructing the arguments of the K8s Pod Operator on Airflow.
@@ -358,6 +398,7 @@ class Airflow(object):
             "METAFLOW_AIRFLOW_TASK_ID": AIRFLOW_MACROS.TASK_ID,
             "METAFLOW_AIRFLOW_DAG_RUN_ID": AIRFLOW_MACROS.AIRFLOW_RUN_ID,
             "METAFLOW_AIRFLOW_JOB_ID": AIRFLOW_MACROS.AIRFLOW_JOB_ID,
+            "METAFLOW_PRODUCTION_TOKEN": self.production_token,
             "METAFLOW_ATTEMPT_NUMBER": AIRFLOW_MACROS.ATTEMPT,
         }
         env.update(additional_mf_variables)
@@ -392,6 +433,7 @@ class Airflow(object):
             )
 
         annotations = {
+            "metaflow/production_token": self.production_token,
             "metaflow/owner": self.username,
             "metaflow/user": self.username,
             "metaflow/flow_name": self.flow.name,

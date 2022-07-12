@@ -11,9 +11,9 @@ FOREACH_XCOM_KEY = "metaflow_foreach_indexes"
 RUN_HASH_ID_LEN = 12
 TASK_ID_HASH_LEN = 8
 RUN_ID_PREFIX = "airflow"
-AIRFLOW_FOREACH_SUPPORT_VERSION = [2, 3, 0]
-AIRFLOW_MIN_SUPPORT_VERSION = [2, 0, 0]
-KUBERNETES_PROVIDER_FOREACH_VERSION = [5, 0, 0]
+AIRFLOW_FOREACH_SUPPORT_VERSION = "2.3.0"
+AIRFLOW_MIN_SUPPORT_VERSION = "2.0.0"
+KUBERNETES_PROVIDER_FOREACH_VERSION = "5.0.0"
 
 
 class KubernetesProviderNotFound(Exception):
@@ -30,7 +30,7 @@ class IncompatibleVersionException(Exception):
     def __init__(self, version_number) -> None:
         msg = (
             "Airflow version %s is incompatible with Metaflow. Metaflow requires Airflow a minimum version %s"
-            % (version_number, ".".join(AIRFLOW_MIN_SUPPORT_VERSION))
+            % (version_number, AIRFLOW_MIN_SUPPORT_VERSION)
         )
         super().__init__(msg)
 
@@ -40,7 +40,7 @@ class IncompatibleKubernetesProviderVersionException(Exception):
         "Kubernetes Provider version is incompatible with Metaflow foreach's. "
         "Install the provider via "
         "`%s -m pip install apache-airflow-providers-cncf-kubernetes==%s`"
-    ) % (sys.executable, ".".join(KUBERNETES_PROVIDER_FOREACH_VERSION))
+    ) % (sys.executable, KUBERNETES_PROVIDER_FOREACH_VERSION)
 
 
 class AirflowSensorNotFound(Exception):
@@ -50,7 +50,7 @@ class AirflowSensorNotFound(Exception):
 def create_absolute_version_number(version):
     abs_version = None
     # For all digits
-    if all(v.is_digit() for v in version.split(".")):
+    if all(v.isdigit() for v in version.split(".")):
         abs_version = sum(
             [
                 (10 ** (3 - idx)) * i
@@ -58,7 +58,7 @@ def create_absolute_version_number(version):
             ]
         )
     # For first two digits
-    elif all(v.is_digit() for v in version.split(".")[:2]):
+    elif all(v.isdigit() for v in version.split(".")[:2]):
         abs_version = sum(
             [
                 (10 ** (3 - idx)) * i
@@ -77,7 +77,7 @@ def _validate_dyanmic_mapping_compatibility():
     ):
         ForeachIncompatibleException(
             "Please install airflow version %s to use Airflow's Dynamic task mapping functionality."
-            % (".".join(AIRFLOW_FOREACH_SUPPORT_VERSION))
+            % AIRFLOW_FOREACH_SUPPORT_VERSION
         )
 
 
