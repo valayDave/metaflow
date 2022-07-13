@@ -322,6 +322,42 @@ def make_flow(
     )
 
 
+def _validate_foreach_constraints(graph):
+    def traverse_graph(node, state):
+        if node.type == "foreach" and node.is_inside_foreach:
+            raise NotSupportedException(
+                "Step *%s* is a foreach step called within a foreach step. This type of graph is currently not supported with Airflow."
+                % node.name
+            )
+
+        if node.type == "foreach":
+            state["foreach_stack"] = [node.name]
+
+        if node.type in ("start", "linear", "join", "foreach"):
+            if node.type == "linear" and node.is_inside_foreach:
+                state["foreach_stack"].append(node.name)
+
+            if len(state["foreach_stack"]) > 2:
+                raise NotSupportedException(
+                    "The foreach step *%s* created by step *%s* needs to have an immidiate join step. "
+                    "Step *%s* is invalid since it is a linear step with a foreach. "
+                    "This type of graph is currently not supported with Airflow."
+                    % (
+                        state["foreach_stack"][1],
+                        state["foreach_stack"][0],
+                        state["foreach_stack"][-1],
+                    )
+                )
+
+            traverse_graph(graph[node.out_funcs[0]], state)
+
+        elif node.type == "split":
+            for func in node.out_funcs:
+                traverse_graph(graph[func], state)
+
+    traverse_graph(graph["start"], {})
+
+
 def _validate_workflow(flow, graph, flow_datastore, metadata, workflow_timeout):
     no_scheduling = not (
         flow._flow_decorators.get("airflow_schedule_interval")
@@ -334,8 +370,8 @@ def _validate_workflow(flow, graph, flow_datastore, metadata, workflow_timeout):
         )
     # check for other compute related decorators.
     # supported compute : k8s (v1), local(v2), batch(v3),
+    _validate_foreach_constraints(graph)
     for node in graph:
-        # TODO (Final-Comments) : Check if there is an nesting within the foreach and throw and exception if there is a nested foreach within the code.
         if any([d.name == "batch" for d in node.decorators]):
             raise NotSupportedException(
                 "Step *%s* is marked for execution on AWS Batch with Airflow which isn't currently supported."
