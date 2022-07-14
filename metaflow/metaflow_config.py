@@ -242,6 +242,13 @@ KUBERNETES_CONTAINER_REGISTRY = (
 )
 #
 
+##
+# Airflow Configuration
+##
+AIRFLOW_KUBERNETES_STARTUP_TIMEOUT = from_conf(
+    "METAFLOW_AIRFLOW_KUBERNETES_STARTUP_TIMEOUT_SECONDS", 60 * 60
+)
+
 
 ###
 # Conda configuration

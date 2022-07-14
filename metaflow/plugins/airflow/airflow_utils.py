@@ -1,11 +1,6 @@
 import hashlib
 import json
-import os
-import random
-import re
 import sys
-import time
-import typing
 from collections import defaultdict
 from datetime import datetime, timedelta
 
@@ -16,7 +11,9 @@ FOREACH_XCOM_KEY = "metaflow_foreach_indexes"
 RUN_HASH_ID_LEN = 12
 TASK_ID_HASH_LEN = 8
 RUN_ID_PREFIX = "airflow"
-AIRFLOW_FOREACH_SUPPORT_VERSION = [2, 3, 0]
+AIRFLOW_FOREACH_SUPPORT_VERSION = "2.3.0"
+AIRFLOW_MIN_SUPPORT_VERSION = "2.0.0"
+KUBERNETES_PROVIDER_FOREACH_VERSION = "5.0.0"
 
 
 class KubernetesProviderNotFound(Exception):
@@ -27,6 +24,25 @@ class ForeachIncompatibleException(Exception):
     headline = "Airflow version is incompatible to support Metaflow foreach's."
 
 
+class IncompatibleVersionException(Exception):
+    headline = "Metaflow is incompatible with current version of Airflow."
+
+    def __init__(self, version_number) -> None:
+        msg = (
+            "Airflow version %s is incompatible with Metaflow. Metaflow requires Airflow a minimum version %s"
+            % (version_number, AIRFLOW_MIN_SUPPORT_VERSION)
+        )
+        super().__init__(msg)
+
+
+class IncompatibleKubernetesProviderVersionException(Exception):
+    headline = (
+        "Kubernetes Provider version is incompatible with Metaflow foreach's. "
+        "Install the provider via "
+        "`%s -m pip install apache-airflow-providers-cncf-kubernetes==%s`"
+    ) % (sys.executable, KUBERNETES_PROVIDER_FOREACH_VERSION)
+
+
 class AirflowSensorNotFound(Exception):
     headline = "Sensor package not found"
 
@@ -34,7 +50,7 @@ class AirflowSensorNotFound(Exception):
 def create_absolute_version_number(version):
     abs_version = None
     # For all digits
-    if all(v.is_digit() for v in version.split(".")):
+    if all(v.isdigit() for v in version.split(".")):
         abs_version = sum(
             [
                 (10 ** (3 - idx)) * i
@@ -42,7 +58,7 @@ def create_absolute_version_number(version):
             ]
         )
     # For first two digits
-    elif all(v.is_digit() for v in version.split(".")[:2]):
+    elif all(v.isdigit() for v in version.split(".")[:2]):
         abs_version = sum(
             [
                 (10 ** (3 - idx)) * i
@@ -52,8 +68,7 @@ def create_absolute_version_number(version):
     return abs_version
 
 
-# todo : use this function to validate correct version compatibility support. 
-def _validate_dyanmic_mapping_compatibility(self):
+def _validate_dyanmic_mapping_compatibility():
     from airflow.version import version
 
     af_ver = create_absolute_version_number(version)
@@ -61,9 +76,43 @@ def _validate_dyanmic_mapping_compatibility(self):
         AIRFLOW_FOREACH_SUPPORT_VERSION
     ):
         ForeachIncompatibleException(
-            "Please install version airflow %s to use Airflow's Dynamic task mapping functionality."
-            % (".".join(AIRFLOW_FOREACH_SUPPORT_VERSION))
+            "Please install airflow version %s to use Airflow's Dynamic task mapping functionality."
+            % AIRFLOW_FOREACH_SUPPORT_VERSION
         )
+
+
+def get_kubernetes_provider_version():
+    try:
+        from airflow.providers.cncf.kubernetes.get_provider_info import (
+            get_provider_info,
+        )
+    except ImportError as e:
+        raise KubernetesProviderNotFound(
+            "This DAG utilizes `KubernetesPodOperator`. "
+            "Install the Airflow Kubernetes provider using "
+            "`%s -m pip install apache-airflow-providers-cncf-kubernetes`"
+            % sys.executable
+        )
+    return get_provider_info()["versions"][0]
+
+
+def _validate_minimum_airflow_version():
+    from airflow.version import version
+
+    af_ver = create_absolute_version_number(version)
+    if af_ver is None or af_ver < create_absolute_version_number(
+        AIRFLOW_MIN_SUPPORT_VERSION
+    ):
+        raise IncompatibleVersionException(version)
+
+
+def _check_foreach_compatible_kubernetes_provider():
+    provider_version = get_kubernetes_provider_version()
+    ver = create_absolute_version_number(provider_version)
+    if ver is None or ver < create_absolute_version_number(
+        KUBERNETES_PROVIDER_FOREACH_VERSION
+    ):
+        raise IncompatibleKubernetesProviderVersionException()
 
 
 class AIRFLOW_MACROS:
@@ -235,9 +284,9 @@ def _kubernetes_pod_operator_args(operator_args):
             # Default timeout in airflow is 120. I can remove `startup_timeout_seconds` for now. how should we expose it to the user?
         }
     )
-    # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries
-    # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via
-    # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function
+    # We need to explicity add the `client.V1EnvVar` over here because
+    # `pod_runtime_info_envs` doesn't accept arguments in dictionary form and strictly
+    # Requires objects of type `client.V1EnvVar`
     additional_env_vars = [
         client.V1EnvVar(
             name=k,
@@ -254,12 +303,39 @@ def _kubernetes_pod_operator_args(operator_args):
     ]
     args["pod_runtime_info_envs"] = additional_env_vars
 
-    # TODO (AIRFLOW-BUG): see if this can be fixed after the resolve the issue here : https://github.com/apache/airflow/issues/24669
+    resources = args.get("resources")
+    # KubernetesPodOperator version 5.0.0 renamed `resources` to
+    # `container_resources` (https://github.com/apache/airflow/pull/24673)
+    # This was done because `KubernetesPodOperator` didn't play nice with dynamic task mapping
+    # and they had to deprecate the `resources` argument. Hence the below codepath checks for the version of `KubernetesPodOperator`
+    # and then sets the argument. If the version < 5.0.0 then we set the argument as `resources`.
+    # If it is > 5.0.0 then we set the argument as `container_resources`
+    # The `resources` argument of KuberentesPodOperator is going to be deprecated soon in the future.
+    # So we will only use it for `KuberentesPodOperator` version < 5.0.0
+    # The `resources` argument will also not work for foreach's.
     del args["resources"]
-    # resources = args.get("resources")
-    # args["resources"] = client.V1ResourceRequirements(
-    #     requests=resources["requests"],
-    # )
+    # TODO (Final-Comments): Uncomment below block once airflow releases the Patch for `resources` argument.
+    # provider_version = get_kubernetes_provider_version()
+    # k8s_op_ver = create_absolute_version_number(provider_version)
+    # if k8s_op_ver is None or k8s_op_ver < create_absolute_version_number(
+    #     KUBERNETES_PROVIDER_FOREACH_VERSION
+    # ):
+    #     # Since the provider version is less than `5.0.0` so we need to use the `resources` argument
+    #     # We need to explicitly parse `resources`/`container_resources` to k8s.V1ResourceRequirements otherwise airflow tries
+    #     # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via
+    #     # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function.
+    #     # This fails many times since the dictionary structure it expects is not the same as `client.V1ResourceRequirements`.
+    #     args["resources"] = client.V1ResourceRequirements(
+    #         requests=resources["requests"],
+    #         limits=None if "limits" not in resources else resources["limits"],
+    #     )
+    # else:  # since the provider version is greater than `5.0.0` so should use the `container_resources` argument
+    #     args["container_resources"] = client.V1ResourceRequirements(
+    #         requests=resources["requests"],
+    #         limits=None if "limits" not in resources else resources["limits"],
+    #     )
+    #     del args["resources"]
+
     if operator_args.get("execution_timeout"):
         args["execution_timeout"] = timedelta(
             **operator_args.get(
@@ -446,9 +522,10 @@ class AirflowTask(object):
 
 
 class Workflow(object):
-    def __init__(self, file_path=None, graph_structure=None, **kwargs):
+    def __init__(self, file_path=None, graph_structure=None, metadata=None, **kwargs):
         self._dag_instantiation_params = AirflowDAGArgs(**kwargs)
         self._file_path = file_path
+        self._metadata = metadata
         tree = lambda: defaultdict(tree)
         self.states = tree()
         self.metaflow_params = None
@@ -462,6 +539,7 @@ class Workflow(object):
 
     def to_dict(self):
         return dict(
+            metadata=self._metadata,
             graph_structure=self.graph_structure,
             states={s: v.to_dict() for s, v in self.states.items()},
             dag_instantiation_params=self._dag_instantiation_params.serialize(),
@@ -477,6 +555,7 @@ class Workflow(object):
         re_cls = cls(
             file_path=data_dict["file_path"],
             graph_structure=data_dict["graph_structure"],
+            metadata={} if "metadata" not in data_dict else data_dict["metadata"],
         )
         re_cls._dag_instantiation_params = AirflowDAGArgs.deserialize(
             data_dict["dag_instantiation_params"]
@@ -511,6 +590,17 @@ class Workflow(object):
     def compile(self):
         from airflow import DAG
         from airflow import XComArg
+
+        _validate_minimum_airflow_version()
+
+        if self._metadata["contains_foreach"]:
+            _validate_dyanmic_mapping_compatibility()
+            # TODO (Final-Comments) : uncomment below line once airflow releases the patch for `KubernetesPodOperator`
+            # We need to verify if KubernetesPodOperator is of version > 5.0.0 to support foreachs / dynamic task mapping.
+            # If the dag uses dynamic Task mapping then we throw an error since the `resources` argument in the `KuberentesPodOperator`
+            # doesn't work for dynamic task mapping for `KuberentesPodOperator` version < 5.0.0.
+            # For more context check this issue :  https://github.com/apache/airflow/issues/24669
+            # _check_foreach_compatible_kubernetes_provider()
 
         params_dict = self._construct_params()
         # DAG Params can be seen here :
