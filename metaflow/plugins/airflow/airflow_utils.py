@@ -303,16 +303,39 @@ def _kubernetes_pod_operator_args(operator_args):
     ]
     args["pod_runtime_info_envs"] = additional_env_vars
 
-    # We need to explicitly parse resources to k8s.V1ResourceRequirements otherwise airflow tries
-    # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via
-    # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function
-    # TODO (AIRFLOW-BUG): see if this can be fixed after the resolve the issue here : https://github.com/apache/airflow/issues/24669
-    # TODO (Final-comments) : Wait for airflow to upgrade and and fix this bug. : https://github.com/apache/airflow/pull/24673
+    resources = args.get("resources")
+    # KubernetesPodOperator version 5.0.0 renamed `resources` to
+    # `container_resources` (https://github.com/apache/airflow/pull/24673)
+    # This was done because `KubernetesPodOperator` didn't play nice with dynamic task mapping
+    # and they had to deprecate the `resources` argument. Hence the below codepath checks for the version of `KubernetesPodOperator`
+    # and then sets the argument. If the version < 5.0.0 then we set the argument as `resources`.
+    # If it is > 5.0.0 then we set the argument as `container_resources`
+    # The `resources` argument of KuberentesPodOperator is going to be deprecated soon in the future.
+    # So we will only use it for `KuberentesPodOperator` version < 5.0.0
+    # The `resources` argument will also not work for foreach's.
     del args["resources"]
-    # resources = args.get("resources")
-    # args["resources"] = client.V1ResourceRequirements(
-    #     requests=resources["requests"],
-    # )
+    # TODO (Final-Comments): Uncomment below block once airflow releases the Patch for `resources` argument.
+    # provider_version = get_kubernetes_provider_version()
+    # k8s_op_ver = create_absolute_version_number(provider_version)
+    # if k8s_op_ver is None or k8s_op_ver < create_absolute_version_number(
+    #     KUBERNETES_PROVIDER_FOREACH_VERSION
+    # ):
+    #     # Since the provider version is less than `5.0.0` so we need to use the `resources` argument
+    #     # We need to explicitly parse `resources`/`container_resources` to k8s.V1ResourceRequirements otherwise airflow tries
+    #     # to parse dictionaries to `airflow.providers.cncf.kubernetes.backcompat.pod.Resources` object via
+    #     # `airflow.providers.cncf.kubernetes.backcompat.backward_compat_converts.convert_resources` function.
+    #     # This fails many times since the dictionary structure it expects is not the same as `client.V1ResourceRequirements`.
+    #     args["resources"] = client.V1ResourceRequirements(
+    #         requests=resources["requests"],
+    #         limits=None if "limits" not in resources else resources["limits"],
+    #     )
+    # else:  # since the provider version is greater than `5.0.0` so should use the `container_resources` argument
+    #     args["container_resources"] = client.V1ResourceRequirements(
+    #         requests=resources["requests"],
+    #         limits=None if "limits" not in resources else resources["limits"],
+    #     )
+    #     del args["resources"]
+
     if operator_args.get("execution_timeout"):
         args["execution_timeout"] = timedelta(
             **operator_args.get(
@@ -572,7 +595,11 @@ class Workflow(object):
 
         if self._metadata["contains_foreach"]:
             _validate_dyanmic_mapping_compatibility()
-            # Todo : uncomment below line once airflow releases the patch.
+            # TODO (Final-Comments) : uncomment below line once airflow releases the patch for `KubernetesPodOperator`
+            # We need to verify if KubernetesPodOperator is of version > 5.0.0 to support foreachs / dynamic task mapping.
+            # If the dag uses dynamic Task mapping then we throw an error since the `resources` argument in the `KuberentesPodOperator`
+            # doesn't work for dynamic task mapping for `KuberentesPodOperator` version < 5.0.0.
+            # For more context check this issue :  https://github.com/apache/airflow/issues/24669
             # _check_foreach_compatible_kubernetes_provider()
 
         params_dict = self._construct_params()
