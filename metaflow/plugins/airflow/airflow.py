@@ -106,7 +106,7 @@ class Airflow(object):
                 if path is not None:
                     with open(path, "r") as f:
                         data = json.loads(f.read())
-                    return (data["owner"], data["token"])
+                    return (data["owner"], data["production_token"])
 
     @classmethod
     def get_token_path(cls, name):
@@ -120,7 +120,10 @@ class Airflow(object):
                 (
                     cls.get_token_path(token),
                     BytesIO(
-                        bytes(json.dumps({"token": token, "owner": owner}), "utf-8")
+                        bytes(
+                            json.dumps({"production_token": token, "owner": owner}),
+                            "utf-8",
+                        )
                     ),
                 )
             ],
