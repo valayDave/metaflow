@@ -3,7 +3,7 @@ from .s3_sensor import S3KeySensorDecorator
 from .sql_sensor import SQLSensorDecorator
 
 SUPPORTED_SENSORS = [
-    ExternalTaskSensorDecorator.name,
-    S3KeySensorDecorator.name,
-    SQLSensorDecorator.name,
+    ExternalTaskSensorDecorator,
+    S3KeySensorDecorator,
+    SQLSensorDecorator,
 ]

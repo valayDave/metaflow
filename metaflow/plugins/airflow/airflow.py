@@ -581,9 +581,9 @@ class Airflow(object):
 
     def _collect_flow_sensors(self):
         decos_lists = [
-            self.flow._flow_decorators.get(s)
+            self.flow._flow_decorators.get(s.name)
             for s in SUPPORTED_SENSORS
-            if self.flow._flow_decorators.get(s) is not None
+            if self.flow._flow_decorators.get(s.name) is not None
         ]
         af_tasks = [deco.create_task() for decos in decos_lists for deco in decos]
         if len(af_tasks) > 0:
