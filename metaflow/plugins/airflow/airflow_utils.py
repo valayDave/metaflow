@@ -118,7 +118,7 @@ def _check_foreach_compatible_kubernetes_provider():
 class AIRFLOW_MACROS:
     # run_id_creator is added via the `user_defined_filters`
     RUN_ID = "%s-{{ [run_id, dag_run.dag_id] | run_id_creator }}" % RUN_ID_PREFIX
-    PARAMETER = "{{ params | json_dump }}"
+    PARAMETERS = "{{ params | json_dump }}"
 
     # AIRFLOW_MACROS.TASK_ID will work for linear/branched workflows.
     # ti.task_id is the stepname in metaflow code.

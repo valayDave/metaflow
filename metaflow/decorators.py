@@ -473,8 +473,7 @@ def _attach_decorators_to_step(step, decospecs):
 def _init_flow_decorators(
     flow, graph, environment, flow_datastore, metadata, logger, echo, deco_options
 ):
-    # Since _flow_decorators is a dictonary and some flow-decorators can have many decos of same type allowed.
-    # Hence we set certain keys as lists to accomodate multiple decos of same type and therefore validate if the value is a list
+    # Certain decorators can be specified multiple times and exist as lists in the _flow_decorators dictionary
     for deco in flow._flow_decorators.values():
         if type(deco) == list:
             for rd in deco:
