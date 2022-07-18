@@ -90,7 +90,7 @@ class Airflow(object):
         self.worker_pool = worker_pool
         self.is_paused_upon_creation = is_paused_upon_creation
         self.workflow_timeout = workflow_timeout
-        self.schedule = self._scheduling_interval()
+        self.schedule = self._get_schedule()
         self.parameters = self._process_parameters()
         self.production_token = production_token
 
@@ -127,21 +127,6 @@ class Airflow(object):
             overwrite=False,
         )
 
-    def _scheduling_interval(self):
-        """
-        The airflow integration allows setting schedule interval using `@schedule` and `@airflow_schedule_interval` decorator.
-        This method will extract interval from both and apply the one which is not None. We raise an exception in the
-        airflow_cli.py if both flow decorators are set.
-        """
-        schedule_decorator_cron_pattern, airflow_schedule_decorator_cron_pattern = (
-            self._get_schedule(),
-            self._get_airflow_schedule_interval(),
-        )
-        if schedule_decorator_cron_pattern is not None:
-            return schedule_decorator_cron_pattern
-        elif airflow_schedule_decorator_cron_pattern is not None:
-            return airflow_schedule_decorator_cron_pattern
-
     def _get_schedule(self):
         # Using the cron presets provided here :
         # https://airflow.apache.org/docs/apache-airflow/stable/dag-run.html?highlight=schedule%20interval#cron-presets
@@ -157,12 +142,6 @@ class Airflow(object):
         elif schedule.attributes["daily"]:
             return "@daily"
         return None
-
-    def _get_airflow_schedule_interval(self):
-        schedule_interval = self.flow._flow_decorators.get("airflow_schedule_interval")
-        if schedule_interval is None:
-            return None
-        return schedule_interval.schedule
 
     def _get_retries(self, node):
         max_user_code_retries = 0
