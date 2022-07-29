@@ -322,7 +322,6 @@ def make_flow(
 
 
 def _validate_foreach_constraints(graph):
-    # Todo :Invoke this function when we integrate `foreach`s
     def traverse_graph(node, state):
         if node.type == "foreach" and node.is_inside_foreach:
             raise NotSupportedException(
@@ -378,17 +377,12 @@ def _validate_workflow(flow, graph, flow_datastore, metadata, workflow_timeout):
                 "A default value is required for parameters when deploying flows on Airflow."
             )
     # check for other compute related decorators.
+    _validate_foreach_constraints(graph)
     for node in graph:
         if node.parallel_foreach:
             raise AirflowException(
                 "Deploying flows with @parallel decorator(s) "
                 "to Airflow is not supported currently."
-            )
-
-        if node.type == "foreach":
-            raise NotSupportedException(
-                "Step *%s* is a foreach step and Foreach steps are not currently supported with Airflow."
-                % node.name
             )
         if any([d.name == "batch" for d in node.decorators]):
             raise NotSupportedException(
