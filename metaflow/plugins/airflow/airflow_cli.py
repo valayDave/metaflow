@@ -337,7 +337,7 @@ def _validate_foreach_constraints(graph):
             if node.type == "linear" and node.is_inside_foreach:
                 state["foreach_stack"].append(node.name)
 
-            if len(state["foreach_stack"]) > 2:
+            if "foreach_stack" in state and len(state["foreach_stack"]) > 2:
                 raise NotSupportedException(
                     "The foreach step *%s* created by step *%s* needs to have an immediate join step. "
                     "Step *%s* is invalid since it is a linear step with a foreach. "
