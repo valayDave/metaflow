@@ -127,6 +127,7 @@ class KubernetesDecorator(StepDecorator):
             raise KubernetesException(
                 "The *@kubernetes* decorator requires --datastore=s3 at the moment."
             )
+
         # Set internal state.
         self.logger = logger
         self.environment = environment
