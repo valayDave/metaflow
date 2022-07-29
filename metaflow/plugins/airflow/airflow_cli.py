@@ -323,6 +323,7 @@ def make_flow(
 
 
 def _validate_foreach_constraints(graph):
+    # Todo :Invoke this function when we integrate foreach's
     def traverse_graph(node, state):
         if node.type == "foreach" and node.is_inside_foreach:
             raise NotSupportedException(
@@ -360,8 +361,12 @@ def _validate_foreach_constraints(graph):
 
 def _validate_workflow(flow, graph, flow_datastore, metadata, workflow_timeout):
     # check for other compute related decorators.
-    _validate_foreach_constraints(graph)
     for node in graph:
+        if node.type == "foreach":
+            raise NotSupportedException(
+                "Step *%s* is a foreach step and Foreach steps are not currently supported with Airflow."
+                % node.name
+            )
         if any([d.name == "batch" for d in node.decorators]):
             raise NotSupportedException(
                 "Step *%s* is marked for execution on AWS Batch with Airflow which isn't currently supported."
