@@ -329,7 +329,7 @@ class StepFunctions(object):
     def _cron(self):
         schedule = self.flow._flow_decorators.get("schedule")
         if schedule:
-            return schedule.schedule
+            return schedule[0].schedule
         return None
 
     def _process_parameters(self):
