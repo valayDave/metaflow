@@ -99,7 +99,7 @@ class Airflow(object):
         self.worker_pool = worker_pool
         self.is_paused_upon_creation = is_paused_upon_creation
         self.workflow_timeout = workflow_timeout
-        self.schedule = self._get_schedule()
+        self.schedule, self.timezone = self._get_schedule()
         self.parameters = self._process_parameters()
         self.production_token = production_token
         self.contains_foreach = self._contains_foreach()
@@ -140,22 +140,40 @@ class Airflow(object):
             overwrite=False,
         )
 
+    def _parse_timezone(self, timezone):
+        if timezone is None:
+            return None
+        from .timezone_map import TIMEZONE_MAP
+
+        if timezone not in TIMEZONE_MAP:
+            return None
+        utc_offset_string = TIMEZONE_MAP[timezone]
+        timezone = datetime.strptime(utc_offset_string, "%z").tzinfo
+        return timezone
+
     def _get_schedule(self):
+        # returns a tuple (schedule, timezone)
         # Using the cron presets provided here :
         # https://airflow.apache.org/docs/apache-airflow/stable/dag-run.html?highlight=schedule%20interval#cron-presets
         schedule = self.flow._flow_decorators.get("schedule")
+        timezone = None
+        schedule_interval = None
+
         if not schedule:
-            return None
+            return schedule_interval, timezone
+
         schedule = schedule[0]
         if schedule.attributes["cron"]:
-            return schedule.attributes["cron"]
+            schedule_interval = schedule.attributes["cron"]
         elif schedule.attributes["weekly"]:
-            return "@weekly"
+            schedule_interval = "@weekly"
         elif schedule.attributes["hourly"]:
-            return "@hourly"
+            schedule_interval = "@hourly"
         elif schedule.attributes["daily"]:
-            return "@daily"
-        return None
+            schedule_interval = "@daily"
+
+        timezone = self._parse_timezone(schedule.timezone)
+        return schedule_interval, timezone
 
     def _get_retries(self, node):
         max_user_code_retries = 0
@@ -674,7 +692,7 @@ class Airflow(object):
             # `start_date` is a mandatory argument even though the documentation lists it as optional value
             # Based on the code, Airflow will throw a `AirflowException` when `start_date` is not provided
             # to a DAG : https://github.com/apache/airflow/blob/0527a0b6ce506434a23bc2a6f5ddb11f492fc614/airflow/models/dag.py#L2170
-            start_date=datetime.now(),
+            start_date=datetime.now(tz=self.timezone),
             tags=self.tags,
             file_path=self._file_path,
             graph_structure=self.graph_structure,

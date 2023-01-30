@@ -123,7 +123,7 @@ def datetimeparse(isotimestamp):
     if ver >= 37:
         return datetime.fromisoformat(isotimestamp)
     else:
-        return datetime.strptime(isotimestamp, "%Y-%m-%dT%H:%M:%S.%f")
+        return datetime.strptime(isotimestamp, "%Y-%m-%dT%H:%M:%S.%f%z")
 
 
 def get_xcom_arg_class():
