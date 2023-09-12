@@ -146,6 +146,8 @@ class ImageComponent(DefaultComponent):
             label=self._label,
         )
         datadict.update(img_dict)
+        if self.id is not None:
+            datadict["id"] = self.id
         return datadict
 
 
@@ -194,6 +196,8 @@ class TableComponent(DefaultComponent):
         datadict["columns"] = self._headers
         datadict["data"] = self._data
         datadict["vertical"] = self._vertical
+        if self.id is not None:
+            datadict["id"] = self.id
         return datadict
 
 
@@ -295,6 +299,8 @@ class ArtifactsComponent(DefaultComponent):
     def render(self):
         datadict = super().render()
         datadict["data"] = self._data
+        if self.id is not None:
+            datadict["id"] = self.id
         return datadict
 
 
@@ -308,6 +314,8 @@ class MarkdownComponent(DefaultComponent):
     def render(self):
         datadict = super().render()
         datadict["source"] = self._text
+        if self.id is not None:
+            datadict["id"] = self.id
         return datadict
 
 
