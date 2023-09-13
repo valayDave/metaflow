@@ -82,12 +82,14 @@ export interface SectionComponent {
   type: "section";
   contents?: CardComponent[];
   title?: string;
+  id?: string;
   subtitle?: string;
   columns?: number;
 }
 
 export interface PageComponent {
   type: "page";
+  id?: string;
   title: string; // used as an ID and label
   contents?: CardComponent[];
 }
@@ -95,27 +97,32 @@ export interface PageComponent {
 export interface ImageComponent {
   type: "image";
   src: string;
+  id?: string;
   label?: string;
   description?: string;
 }
 
 export interface TitleComponent {
   type: "title";
+  id?: string;
   text: string;
 }
 
 export interface SubtitleComponent {
   type: "subtitle";
+  id?: string;
   text: string;
 }
 
 export interface TextComponent {
   type: "text";
+  id?: string;
   text: string;
 }
 
 export interface HeadingComponent {
   type: "heading";
+  id?: string;
   title?: string;
   subtitle?: string;
 }
@@ -125,6 +132,7 @@ export interface HeadingComponent {
 export interface TableComponent {
   type: "table";
   data: TableData;
+  id?: string;
   columns: TableColumns;
   vertical?: boolean;
 }
@@ -138,6 +146,7 @@ export interface DefaultChart {
 // you can pass in only a single line of data/label and we will render the chart
 export interface LineChartComponent extends DefaultChart {
   type: "lineChart";
+  id?: string;
   data?: number[];
   labels?: string[] | number[];
 }
@@ -145,28 +154,33 @@ export interface LineChartComponent extends DefaultChart {
 // you can pass in only a single line of data/label and we will render the chart
 export interface BarChartComponent extends DefaultChart {
   type: "barChart";
+  id?: string;
   data?: number[];
   labels?: string[] | number[];
 }
 
 export interface ArtifactsComponent {
   type: "artifacts";
+  id?: string;
   data: Artifacts;
 }
 
 export interface DagComponent {
   type: "dag";
+  id?: string;
   data: Dag;
 }
 
 // handle stderr stdout strings
 export interface LogComponent {
   type: "log";
+  id?: string;
   data: string;
 }
 
 export interface MarkdownComponent {
   type: "markdown";
+  id?: string;
   source: string;
 }
 
