@@ -1,6 +1,7 @@
 from .card_modules import MetaflowCardComponent
 from .card_modules.basic import ErrorComponent, SectionComponent
 from .card_modules.components import UserComponent
+from functools import partial
 import uuid
 import json
 import time
@@ -186,8 +187,27 @@ class CardComponentManager:
     ```
     """
 
-    def __init__(self, card_proc, components=None, logger=None, no_warnings=False):
-        self._card_proc = card_proc
+    def __init__(
+        self,
+        card_uuid,
+        decorator_attributes,
+        card_proc,
+        components=None,
+        logger=None,
+        no_warnings=False,
+        user_set_card_id=None,
+        runtime_card=False,
+        card_options=None,
+    ):
+        self._card_proc = partial(
+            card_proc,
+            card_uuid,
+            user_set_card_id,
+            runtime_card,
+            decorator_attributes,
+            card_options,
+            logger,
+        )
         self._latest_user_data = None
         self._last_refresh = 0
         self._last_render = 0
@@ -316,9 +336,12 @@ class CardComponentCollector:
         self,
         card_type,
         card_id,
+        decorator_attributes,
+        card_options,
         editable=False,
         customize=False,
         suppress_warnings=False,
+        runtime_card=False,
     ):
         """
         This function helps collect cards from all the card decorators.
@@ -341,13 +364,21 @@ class CardComponentCollector:
             editable=editable,
             customize=customize,
             suppress_warnings=suppress_warnings,
+            runtime_card=runtime_card,
+            decorator_attributes=decorator_attributes,
+            card_options=card_options,
         )
         self._cards_meta[card_uuid] = card_metadata
         self._card_component_store[card_uuid] = CardComponentManager(
+            card_uuid,
+            decorator_attributes,
             self._card_proc,
             components=None,
             logger=self._logger,
             no_warnings=self._no_warnings,
+            user_set_card_id=card_id,
+            runtime_card=runtime_card,
+            card_options=card_options,
         )
         return card_metadata
 
@@ -528,10 +559,15 @@ class CardComponentCollector:
                 self._warning(_warning_msg)
                 return
             self._card_component_store[card_uuid] = CardComponentManager(
+                card_uuid,
+                self._cards_meta[card_uuid]["decorator_attributes"],
                 self._card_proc,
                 components=value,
                 logger=self._logger,
                 no_warnings=self._no_warnings,
+                user_set_card_id=key,
+                card_options=self._cards_meta[card_uuid]["card_options"],
+                runtime_card=self._cards_meta[card_uuid]["runtime_card"],
             )
             return
 

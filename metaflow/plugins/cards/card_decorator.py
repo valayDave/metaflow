@@ -63,6 +63,13 @@ class CardDecorator(StepDecorator):
 
     _called_once = {}
 
+    async_card_processes = {
+        # "carduuid": {
+        #     "proc": subprocess.Popen,
+        #     "started": time.time()
+        # }
+    }
+
     def __init__(self, *args, **kwargs):
         super(CardDecorator, self).__init__(*args, **kwargs)
         self._task_datastore = None
@@ -73,6 +80,26 @@ class CardDecorator(StepDecorator):
         self._card_uuid = None
         self._user_set_card_id = None
         self._async_proc = None
+
+    @classmethod
+    def _register_card_process(cls, carduuid, proc):
+        cls.async_card_processes[carduuid] = {
+            "proc": proc,
+            "started": time.time(),
+        }
+
+    @classmethod
+    def _get_card_process(cls, carduuid):
+        proc_dict = cls.async_card_processes.get(carduuid, None)
+        if proc_dict is not None:
+            return proc_dict["proc"], proc_dict["started"]
+        return None, None
+
+    @classmethod
+    def _remove_card_process(cls, carduuid):
+        if carduuid in cls.async_card_processes:
+            cls.async_card_processes[carduuid]["proc"].kill()
+            del cls.async_card_processes[carduuid]
 
     def _is_event_registered(self, evt_name):
         return evt_name in self._called_once
@@ -174,8 +201,11 @@ class CardDecorator(StepDecorator):
         card_metadata = current.card._add_card(
             self.attributes["type"],
             self._user_set_card_id,
-            self._is_editable,
-            customize,
+            self.attributes,
+            self.card_options,
+            editable=self._is_editable,
+            customize=customize,
+            runtime_card=self._is_runtime_card,
         )
         self._card_uuid = card_metadata["uuid"]
 
@@ -192,11 +222,39 @@ class CardDecorator(StepDecorator):
         self, step_name, flow, graph, is_task_ok, retry_count, max_user_code_retries
     ):
         if is_task_ok:
-            self._card_proc("render")
-            self._card_proc("refresh", final=True)
+            self._card_proc(
+                self._card_uuid,
+                self._user_set_card_id,
+                self._is_runtime_card,
+                self.attributes,
+                self.card_options,
+                self._logger,
+                "render",
+            )
+            self._card_proc(
+                self._card_uuid,
+                self._user_set_card_id,
+                self._is_runtime_card,
+                self.attributes,
+                self.card_options,
+                self._logger,
+                "refresh",
+                final=True,
+            )
 
-    def _card_proc(self, mode, final=False):
-        if mode != "render" and not self._is_runtime_card:
+    def _card_proc(
+        self,
+        carduuid,
+        user_set_card_id,
+        runtime_card,
+        decorator_attributes,
+        card_options,
+        logger,
+        mode,
+        final=False,
+    ):
+        # warning_message("calling proc for uuid %s" % self._card_uuid, self._logger)
+        if mode != "render" and not runtime_card:
             # silently ignore runtime updates for cards that don't support them
             return
         elif mode == "refresh":
@@ -204,11 +262,21 @@ class CardDecorator(StepDecorator):
             # if we are just updating data
             component_strings = []
         else:
-            component_strings = current.card._serialize_components(self._card_uuid)
+            component_strings = current.card._serialize_components(carduuid)
 
-        data = current.card._get_latest_data(self._card_uuid, final=final)
+        data = current.card._get_latest_data(carduuid, final=final)
         runspec = "/".join([current.run_id, current.step_name, current.task_id])
-        self._run_cards_subprocess(mode, runspec, component_strings, data)
+        self._run_cards_subprocess(
+            carduuid,
+            user_set_card_id,
+            mode,
+            runspec,
+            decorator_attributes,
+            card_options,
+            component_strings,
+            logger,
+            data,
+        )
 
     @staticmethod
     def _options(mapping):
@@ -236,7 +304,18 @@ class CardDecorator(StepDecorator):
         }
         return list(self._options(top_level_options))
 
-    def _run_cards_subprocess(self, mode, runspec, component_strings, data=None):
+    def _run_cards_subprocess(
+        self,
+        carduuid,
+        user_set_card_id,
+        mode,
+        runspec,
+        decorator_attributes,
+        card_options,
+        component_strings,
+        logger,
+        data=None,
+    ):
         components_file = data_file = None
         wait = mode == "render"
 
@@ -264,25 +343,25 @@ class CardDecorator(StepDecorator):
             runspec,
             "--delete-input-files",
             "--card-uuid",
-            self._card_uuid,
+            carduuid,
             "--mode",
             mode,
             "--type",
-            self.attributes["type"],
+            decorator_attributes["type"],
             # Add the options relating to card arguments.
             # todo : add scope as a CLI arg for the create method.
         ]
-        if self.card_options is not None and len(self.card_options) > 0:
-            cmd += ["--options", json.dumps(self.card_options)]
+        if card_options is not None and len(card_options) > 0:
+            cmd += ["--options", json.dumps(card_options)]
         # set the id argument.
 
-        if self.attributes["timeout"] is not None:
-            cmd += ["--timeout", str(self.attributes["timeout"])]
+        if decorator_attributes["timeout"] is not None:
+            cmd += ["--timeout", str(decorator_attributes["timeout"])]
 
-        if self._user_set_card_id is not None:
-            cmd += ["--id", str(self._user_set_card_id)]
+        if user_set_card_id is not None:
+            cmd += ["--id", str(user_set_card_id)]
 
-        if self.attributes["save_errors"]:
+        if decorator_attributes["save_errors"]:
             cmd += ["--render-error-card"]
 
         if components_file is not None:
@@ -292,17 +371,21 @@ class CardDecorator(StepDecorator):
             cmd += ["--data-file", data_file.name]
 
         response, fail = self._run_command(
-            cmd, os.environ, timeout=self.attributes["timeout"], wait=wait
+            cmd,
+            carduuid,
+            os.environ,
+            timeout=decorator_attributes["timeout"],
+            wait=wait,
         )
         if fail:
             resp = "" if response is None else response.decode("utf-8")
-            self._logger(
+            logger(
                 "Card render failed with error : \n\n %s" % resp,
                 timestamp=False,
                 bad=True,
             )
 
-    def _run_command(self, cmd, env, wait=True, timeout=None):
+    def _run_command(self, cmd, carduuid, env, wait=True, timeout=None):
         fail = False
         timeout_args = {}
         async_timeout = ASYNC_TIMEOUT
@@ -323,17 +406,22 @@ class CardDecorator(StepDecorator):
                 fail = True
             return rep, fail
         else:
-            if self._async_proc and self._async_proc.poll() is None:
-                if time.time() - self._async_started > async_timeout:
-                    self._async_proc.kill()
+            _async_proc, _async_started = self._get_card_process(carduuid)
+            if _async_proc and _async_proc.poll() is None:
+                if time.time() - _async_started > async_timeout:
+                    self._remove_card_process(carduuid)
                 else:
                     # silently refuse to run an async process if a previous one is still running
                     # and timeout hasn't been reached
-                    return "", False
+                    return "".encode(), False
             else:
-                # print("CARD CMD", " ".join(cmd))
-                self._async_proc = subprocess.Popen(
-                    cmd, env=env, stderr=subprocess.DEVNULL, stdout=subprocess.DEVNULL
+                self._register_card_process(
+                    carduuid,
+                    subprocess.Popen(
+                        cmd,
+                        env=env,
+                        stderr=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,
+                    ),
                 )
-                self._async_started = time.time()
-                return "", False
+                return "".encode(), False
