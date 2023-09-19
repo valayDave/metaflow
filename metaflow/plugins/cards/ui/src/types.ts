@@ -12,7 +12,7 @@ export type Boxes = Record<string, HTMLElement>;
 /* ------------------------------- DATA TYPES ------------------------------- */
 
 export interface Artifact {
-  name: string|null;
+  name: string | null;
   type: string;
   data: string;
   label?: string;
@@ -20,7 +20,18 @@ export interface Artifact {
 
 export type Artifacts = Artifact[];
 
-export type TableDataCell = boolean | string | number | ArtifactsComponent | BarChartComponent | DagComponent | HeadingComponent | LineChartComponent | LogComponent | MarkdownComponent | TextComponent;
+export type TableDataCell =
+  | boolean
+  | string
+  | number
+  | ArtifactsComponent
+  | BarChartComponent
+  | DagComponent
+  | HeadingComponent
+  | LineChartComponent
+  | LogComponent
+  | MarkdownComponent
+  | TextComponent;
 
 export type TableColumns = string[];
 export type TableData = TableDataCell[][];
@@ -119,6 +130,14 @@ export interface TextComponent {
   id?: string;
   text: string;
 }
+export interface ProgressBarComponent {
+  type: "progressBar";
+  id?: string;
+  label?: string;
+  max: number;
+  value: number;
+  unit?: string;
+}
 
 export interface HeadingComponent {
   type: "heading";
@@ -195,6 +214,7 @@ export type CardComponent =
   | LogComponent
   | MarkdownComponent
   | PageComponent
+  | ProgressBarComponent
   | SectionComponent
   | SubtitleComponent
   | TableComponent
