@@ -7,6 +7,7 @@
   const { src, label, description } = componentData;
 </script>
 
+<!-- svelte-ignore a11y-click-events-have-key-events -->
 <figure on:click={() => modal.set(componentData)} data-component="image">
   <div class="imageContainer">
     <img {src} alt={label || "image"} />
