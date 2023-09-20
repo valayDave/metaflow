@@ -3,12 +3,12 @@
 <script lang="ts">
   import type * as types from "../types";
   export let componentData: types.ProgressBarComponent;
-  const { max, id, value, label, unit } = componentData;
+  $: ({ max, id, value, label, unit } = componentData);
 </script>
 
 <div>
   {#if label}
-    <label for={id}>{label} ({value}{unit})</label>
+    <label for={id}>{label} ({value}{unit || ""})</label>
   {/if}
-  <progress {id} {max} {value}>{value}{unit}</progress>
+  <progress {id} {max} {value}>{value}{unit || ""}</progress>
 </div>

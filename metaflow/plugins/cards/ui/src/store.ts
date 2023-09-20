@@ -35,7 +35,7 @@ const findAndMutateTree = (
   );
 
   if (componentIndex > -1) {
-    components[componentIndex] = newComponent;
+    Object.assign(components[componentIndex], newComponent);
   } else {
     // if the component has children, and nothing was found, run again with them
     components.forEach((component) => {

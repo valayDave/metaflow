@@ -23,6 +23,7 @@
           "contents": [
             {
               "type": "progressBar",
+              "id": "progress1",
               "max": 100,
               "value": 55,
               "label": "custom bar",

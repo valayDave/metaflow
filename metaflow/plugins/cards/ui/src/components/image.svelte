@@ -4,7 +4,7 @@
   import { modal } from "../store";
 
   export let componentData: types.ImageComponent;
-  const { src, label, description } = componentData;
+  $: ({ src, label, description } = componentData);
 </script>
 
 <!-- svelte-ignore a11y-click-events-have-key-events -->
