@@ -10,7 +10,7 @@ export const cardData: Writable<types.CardResponse | undefined> =
  * It is used to update the cardData object with
  * changes that have come from the parent window.
  */
-export const setCardDataFromWindow = ((window as any).setCardFromWindow = (
+export const setCardDataFromWindow = ((window as any).metaflow_card_update = (
   dataChanges: Record<string, types.CardComponent>,
 ) => {
   cardData.update((d: types.CardResponse) => {
