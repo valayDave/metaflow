@@ -23,6 +23,7 @@ export const setCardDataFromWindow = ((window as any).metaflow_card_update = (
 
     return newData;
   });
+  return true;
 });
 
 // NOTE: this function mutates the object! Be careful with it.
