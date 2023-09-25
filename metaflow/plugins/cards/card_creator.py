@@ -9,6 +9,12 @@ from metaflow import current
 ASYNC_TIMEOUT = 30
 
 
+def warning_message(message, logger=None, ts=False):
+    msg = "[@card WARNING] %s" % message
+    if logger:
+        logger(msg, timestamp=ts, bad=True)
+
+
 class CardProcessManager:
     """
     This class is responsible for managing the card creation processes.
@@ -44,18 +50,25 @@ class CardProcessManager:
 
 
 class CardCreator:
+
+    state_manager = None  # of type `CardStateManager`
+
     def __init__(
         self,
-        top_level_options=None,
+        base_command=None,
         pathspec=None,
         # TODO Add a pathspec somewhere here so that it can instantiate correctly.
     ):
-        self._top_level_options = top_level_options
+        self._base_command = base_command
         self._pathspec = pathspec
+
+    @property
+    def pathspec(self):
+        return self._pathspec
 
     def _dump_state_to_dict(self):
         return {
-            "top_level_options": self._top_level_options,
+            "base_command": self._base_command,
             "pathspec": self._pathspec,
         }
 
@@ -124,12 +137,13 @@ class CardCreator:
             json.dump(data, data_file)
             data_file.seek(0)
 
-        executable = sys.executable
-        cmd = [
-            executable,
-            sys.argv[0],
-        ]
-        cmd += self._top_level_options + [
+        if self.state_manager is not None:
+            self.state_manager._save_card_state(
+                card_uuid, components=component_strings, data=data
+            )
+
+        cmd = []
+        cmd += self._base_command + [
             "card",
             "create",
             runspec,
@@ -169,6 +183,7 @@ class CardCreator:
             timeout=decorator_attributes["timeout"],
             wait=wait,
         )
+        # warning_message(str(cmd), logger)
         if fail:
             resp = "" if response is None else response.decode("utf-8")
             logger(

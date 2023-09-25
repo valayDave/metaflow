@@ -1,6 +1,8 @@
 from .card_modules import MetaflowCardComponent
 from .card_modules.basic import ErrorComponent, SectionComponent
 from .card_modules.components import UserComponent
+from .card_locks import LockableCardDict
+from .runtime_collector_state import _get_card_state_directory
 from functools import partial
 import uuid
 import json
@@ -251,7 +253,11 @@ class CardComponentManager:
             mode=mode,
         )
 
-    def refresh(self, data=None, force=False):
+    def refresh(
+        self,
+        data=None,
+        force=False,
+    ):
         # todo make this a configurable variable
         self._latest_user_data = data
         nu = time.time()
@@ -363,7 +369,7 @@ class CardComponentCollector:
         return state_object
 
     @classmethod
-    def _load_state(cls, state_dict, logger):
+    def _load_state(cls, state_dict, logger, state_manager):
         from .card_creator import CardCreator
 
         def _load_stores(card_manager_dict):
@@ -375,9 +381,15 @@ class CardComponentCollector:
             return loaded_store
 
         card_creator = CardCreator(**state_dict["card_creator"])
-        collector_object = cls(logger=logger, card_creator=card_creator)
-        collector_object._card_component_store = _load_stores(
-            state_dict["card_component_store"]
+        card_creator.state_manager = state_manager
+        collector_object = cls(
+            logger=logger, card_creator=card_creator, inside_main_process=False
+        )
+        collector_object._card_component_store = LockableCardDict(
+            _load_stores(state_dict["card_component_store"]),
+            _get_card_state_directory(card_creator.pathspec),
+            pre_task_startup=False,
+            post_task_startup=True,
         )
         collector_object._cards_meta = state_dict["cards_meta"]
         collector_object._card_id_map = state_dict["card_id_map"]
@@ -385,14 +397,18 @@ class CardComponentCollector:
         collector_object._no_warnings = state_dict["no_warnings"]
         return collector_object
 
-    def __init__(self, logger=None, card_creator=None):
+    def __init__(self, logger=None, card_creator=None, inside_main_process=True):
         from metaflow.metaflow_config import CARD_NO_WARNING
 
-        self._card_component_store = (
+        self._prefinalize_cards_dict = {}
+        self._card_component_store = {
             # Each key in the dictionary is the UUID of an individual card.
             # value is of type `CardComponentManager`, holding a list of MetaflowCardComponents for that particular card
-            {}
-        )
+            # When the @card decorator instantiates the CardComponentCollector, it will first have a {} for this variable.
+            # Once the decorator adds all the cards to the collector and calls `_finalize`, this variable will turn into a lockable dictionary.
+            # This lockable dictionary will help ensure that this same object can be instantiated outside metaflow
+            # and we can dis-allow concurrent access to the same card.
+        }
         self._cards_meta = (
             {}
         )  # a `dict` of (card_uuid, `dict)` holding all metadata about all @card decorators on the `current` @step.
@@ -409,6 +425,7 @@ class CardComponentCollector:
             "update_no_id": False,
         }
         self._no_warnings = True if CARD_NO_WARNING else False
+        self._inside_main_process = inside_main_process
 
     @staticmethod
     def create_uuid():
@@ -455,7 +472,7 @@ class CardComponentCollector:
             card_options=card_options,
         )
         self._cards_meta[card_uuid] = card_metadata
-        self._card_component_store[card_uuid] = CardComponentManager(
+        self._prefinalize_cards_dict[card_uuid] = CardComponentManager(
             card_uuid=card_uuid,
             decorator_attributes=decorator_attributes,
             card_creator=self._card_creator,
@@ -473,6 +490,8 @@ class CardComponentCollector:
         self._log(msg, timestamp=False, bad=True)
 
     def _add_warning_to_cards(self, warn_msg):
+        # FIXME: This should behave based on the type of card it is updating.
+        # All cards shouldnt get a warning component.
         if self._no_warnings:
             return
         for card_id in self._card_component_store:
@@ -506,6 +525,7 @@ class CardComponentCollector:
                 - The `self._default_editable_card` holds the uuid of the card that will have access to the `append`/`extend` methods.
         2. Resolving edge cases where @card `id` argument may be `None` or have a duplicate `id` when there are more than one editable cards.
         3. Resolving the `self._default_editable_card` to the card with the`customize=True` argument.
+        4. Finalizing all the locks in the `self._card_component_store`
         """
         all_card_meta = list(self._cards_meta.values())
         for c in all_card_meta:
@@ -518,7 +538,7 @@ class CardComponentCollector:
         editable_cards_meta = [c for c in all_card_meta if c["editable"]]
 
         if len(editable_cards_meta) == 0:
-            return
+            return self._init_lockable_card_store()
 
         # Create the `self._card_id_map` lookup table which maps card `id` to `uuid`.
         # This table has access to all cards with `id`s set to them.
@@ -531,7 +551,7 @@ class CardComponentCollector:
         # If there is only one editable card then this card becomes `self._default_editable_card`
         if len(editable_cards_meta) == 1:
             self._default_editable_card = editable_cards_meta[0]["uuid"]
-            return
+            return self._init_lockable_card_store()
 
         # Segregate cards which have id as none and those which don't.
         not_none_id_cards = [c for c in editable_cards_meta if c["card_id"] is not None]
@@ -578,6 +598,17 @@ class CardComponentCollector:
         elif len(customize_cards) == 1:
             # since `editable_cards_meta` hold only `editable=True` by default we can just set this card here.
             self._default_editable_card = customize_cards[0]["uuid"]
+
+        return self._init_lockable_card_store()
+
+    def _init_lockable_card_store(self):
+        self._card_component_store = LockableCardDict(
+            self._prefinalize_cards_dict,
+            _get_card_state_directory(self._card_creator.pathspec),
+            pre_task_startup=True,
+            post_task_startup=False,
+        )
+        self._card_component_store.finalize()
 
     def __getitem__(self, key):
         """
@@ -792,6 +823,9 @@ class CardComponentCollector:
         if card_uuid not in self._card_component_store:
             return []
         return self._card_component_store[card_uuid]._serialize_components()
+
+    def _finished(self):
+        self._card_component_store.unlock_everything()
 
 
 def _render_card_component(component):
