@@ -146,6 +146,8 @@ class ImageComponent(DefaultComponent):
             label=self._label,
         )
         datadict.update(img_dict)
+        if self.id is not None:
+            datadict["id"] = self.id
         return datadict
 
 
@@ -194,6 +196,8 @@ class TableComponent(DefaultComponent):
         datadict["columns"] = self._headers
         datadict["data"] = self._data
         datadict["vertical"] = self._vertical
+        if self.id is not None:
+            datadict["id"] = self.id
         return datadict
 
 
@@ -295,6 +299,8 @@ class ArtifactsComponent(DefaultComponent):
     def render(self):
         datadict = super().render()
         datadict["data"] = self._data
+        if self.id is not None:
+            datadict["id"] = self.id
         return datadict
 
 
@@ -308,6 +314,8 @@ class MarkdownComponent(DefaultComponent):
     def render(self):
         datadict = super().render()
         datadict["source"] = self._text
+        if self.id is not None:
+            datadict["id"] = self.id
         return datadict
 
 
@@ -319,7 +327,13 @@ class TaskInfoComponent(MetaflowCardComponent):
     """
 
     def __init__(
-        self, task, page_title="Task Info", only_repr=True, graph=None, components=[]
+        self,
+        task,
+        page_title="Task Info",
+        only_repr=True,
+        graph=None,
+        components=[],
+        runtime=False,
     ):
         self._task = task
         self._only_repr = only_repr
@@ -328,6 +342,7 @@ class TaskInfoComponent(MetaflowCardComponent):
         self._page_title = page_title
         self.final_component = None
         self.page_component = None
+        self.runtime = runtime
 
     def render(self):
         """
@@ -340,7 +355,8 @@ class TaskInfoComponent(MetaflowCardComponent):
             self._task, graph=self._graph
         )
         # ignore the name as an artifact
-        del task_data_dict["data"]["name"]
+        if "name" in task_data_dict["data"]:
+            del task_data_dict["data"]["name"]
 
         _metadata = dict(version=1, template="defaultCardTemplate")
         # try to parse out metaflow version from tags, but let it go if unset
@@ -370,11 +386,12 @@ class TaskInfoComponent(MetaflowCardComponent):
             "Task Created On": task_data_dict["created_at"],
             "Task Finished On": task_data_dict["finished_at"],
             # Remove Microseconds from timedelta
-            "Task Duration": str(self._task.finished_at - self._task.created_at).split(
-                "."
-            )[0],
             "Tags": ", ".join(tags),
         }
+        if not self.runtime:
+            task_metadata_dict["Task Duration"] = str(
+                self._task.finished_at - self._task.created_at
+            ).split(".")[0]
         if len(user_info) > 0:
             task_metadata_dict["User"] = user_info[0].split("user:")[1]
 
@@ -580,6 +597,10 @@ class DefaultCard(MetaflowCard):
 
     ALLOW_USER_COMPONENTS = True
 
+    IS_RUNTIME_CARD = True
+
+    RELOAD_POLICY = MetaflowCard.RELOAD_POLICY_ONCHANGE
+
     type = "default"
 
     def __init__(self, options=dict(only_repr=True), components=[], graph=None):
@@ -589,7 +610,7 @@ class DefaultCard(MetaflowCard):
             self._only_repr = options["only_repr"]
         self._components = components
 
-    def render(self, task):
+    def render(self, task, runtime=False):
         RENDER_TEMPLATE = read_file(RENDER_TEMPLATE_PATH)
         JS_DATA = read_file(JS_PATH)
         CSS_DATA = read_file(CSS_PATH)
@@ -598,6 +619,7 @@ class DefaultCard(MetaflowCard):
             only_repr=self._only_repr,
             graph=self._graph,
             components=self._components,
+            runtime=runtime,
         ).render()
         pt = self._get_mustache()
         data_dict = dict(
@@ -611,10 +633,26 @@ class DefaultCard(MetaflowCard):
         )
         return pt.render(RENDER_TEMPLATE, data_dict)
 
+    def render_runtime(self, task, data):
+        return self.render(task, runtime=True)
+
+    def refresh(self, task, data):
+        return data["components"]
+
+    def reload_content_token(self, task, data):
+        if task.finished:
+            return "final"
+        else:
+            return "runtime"
+
 
 class BlankCard(MetaflowCard):
 
     ALLOW_USER_COMPONENTS = True
+
+    IS_RUNTIME_CARD = True
+
+    RELOAD_POLICY = MetaflowCard.RELOAD_POLICY_ONCHANGE
 
     type = "blank"
 
@@ -652,6 +690,18 @@ class BlankCard(MetaflowCard):
             card_data_id=uuid.uuid4(),
         )
         return pt.render(RENDER_TEMPLATE, data_dict)
+
+    def render_runtime(self, task, data):
+        return self.render(task)
+
+    def refresh(self, task, data):
+        return data["components"]
+
+    def reload_content_token(self, task, data):
+        if task.finished:
+            return "final"
+        else:
+            return "runtime"
 
 
 class TaskSpecCard(MetaflowCard):
