@@ -191,9 +191,9 @@ class CardComponentManager:
 
     def __init__(
         self,
-        card_uuid,
-        decorator_attributes,
-        card_creator,
+        card_uuid=None,
+        decorator_attributes=None,
+        card_creator=None,
         components=None,
         logger=None,
         no_warnings=False,
@@ -207,7 +207,6 @@ class CardComponentManager:
             runtime_card=runtime_card,
             decorator_attributes=decorator_attributes,
             card_options=card_options,
-            logger=logger,
         )
         self._card_creator = card_creator
         self._latest_user_data = None
@@ -227,6 +226,13 @@ class CardComponentManager:
                 logger=self._logger, components=list(components)
             )
 
+    def _dump_state_to_dict(self):
+        return {**self._card_creator_args, "no_warnings": self._no_warnings}
+
+    @classmethod
+    def _load_from_dict(cls, card_dict, card_creator, logger=None):
+        return cls(**card_dict, card_creator=card_creator, logger=logger)
+
     def append(self, component, id=None):
         self._components.append(component, id=id)
 
@@ -237,7 +243,13 @@ class CardComponentManager:
         self._components.clear()
 
     def _card_proc(self, mode):
-        self._card_creator.create(**self._card_creator_args, mode=mode)
+        self._card_creator.create(
+            **self._card_creator_args,
+            fetch_latest_data=self._get_latest_data,
+            component_serialzer=self._serialize_components,
+            logger=self._logger,
+            mode=mode,
+        )
 
     def refresh(self, data=None, force=False):
         # todo make this a configurable variable
@@ -279,6 +291,25 @@ class CardComponentManager:
             "render_seq": seq,
         }
 
+    def _serialize_components(self):
+        serialized_components = []
+        has_user_components = any(
+            [
+                issubclass(type(component), UserComponent)
+                for component in self._components
+            ]
+        )
+        for component in self._components:
+            rendered_obj = _render_card_component(component)
+            if rendered_obj is None:
+                continue
+            serialized_components.append(rendered_obj)
+        if has_user_components and len(serialized_components) > 0:
+            serialized_components = [
+                SectionComponent(contents=serialized_components).render()
+            ]
+        return serialized_components
+
     def __iter__(self):
         return iter(self._components)
 
@@ -303,6 +334,56 @@ class CardComponentCollector:
         - [x] its `current.card['myid']`
         - [x] by looking it up by its type, e.g. `current.card.get(type='pytorch')`.
     """
+
+    def _dump_state_to_dict(self):
+        """
+        Dump the following object's state to file:
+        - `self._card_component_store`
+        - `self._cards_meta`
+        - `self._card_id_map`
+        - `self._default_editable_card`
+        - `self._card_creator`
+
+        """
+
+        def _serialize_store(card_manager_dict):
+            serialized_store = {}
+            for card_uuid, card_manager in card_manager_dict.items():
+                serialized_store[card_uuid] = card_manager._dump_state_to_dict()
+            return serialized_store
+
+        state_object = {
+            "card_component_store": _serialize_store(self._card_component_store),
+            "cards_meta": self._cards_meta,
+            "card_id_map": self._card_id_map,
+            "default_editable_card": self._default_editable_card,  # UUId of defautl editable card
+            "card_creator": self._card_creator._dump_state_to_dict(),
+            "no_warnings": self._no_warnings,
+        }
+        return state_object
+
+    @classmethod
+    def _load_state(cls, state_dict, logger):
+        from .card_creator import CardCreator
+
+        def _load_stores(card_manager_dict):
+            loaded_store = {}
+            for card_uuid, card_manager in card_manager_dict.items():
+                loaded_store[card_uuid] = CardComponentManager._load_from_dict(
+                    card_manager, card_creator, logger=logger
+                )
+            return loaded_store
+
+        card_creator = CardCreator(**state_dict["card_creator"])
+        collector_object = cls(logger=logger, card_creator=card_creator)
+        collector_object._card_component_store = _load_stores(
+            state_dict["card_component_store"]
+        )
+        collector_object._cards_meta = state_dict["cards_meta"]
+        collector_object._card_id_map = state_dict["card_id_map"]
+        collector_object._default_editable_card = state_dict["default_editable_card"]
+        collector_object._no_warnings = state_dict["no_warnings"]
+        return collector_object
 
     def __init__(self, logger=None, card_creator=None):
         from metaflow.metaflow_config import CARD_NO_WARNING
@@ -375,9 +456,9 @@ class CardComponentCollector:
         )
         self._cards_meta[card_uuid] = card_metadata
         self._card_component_store[card_uuid] = CardComponentManager(
-            card_uuid,
-            decorator_attributes,
-            self._card_creator,
+            card_uuid=card_uuid,
+            decorator_attributes=decorator_attributes,
+            card_creator=self._card_creator,
             components=None,
             logger=self._logger,
             no_warnings=self._no_warnings,
@@ -564,9 +645,11 @@ class CardComponentCollector:
                 self._warning(_warning_msg)
                 return
             self._card_component_store[card_uuid] = CardComponentManager(
-                card_uuid,
-                self._cards_meta[card_uuid]["decorator_attributes"],
-                self._card_creator,
+                card_uuid=card_uuid,
+                decorator_attributes=self._cards_meta[card_uuid][
+                    "decorator_attributes"
+                ],
+                card_creator=self._card_creator,
                 components=value,
                 logger=self._logger,
                 no_warnings=self._no_warnings,
@@ -706,25 +789,9 @@ class CardComponentCollector:
         Components exposed by metaflow ensure that they render safely. If components
         don't render safely then we don't add them to the final list of serialized functions
         """
-        serialized_components = []
         if card_uuid not in self._card_component_store:
             return []
-        has_user_components = any(
-            [
-                issubclass(type(component), UserComponent)
-                for component in self._card_component_store[card_uuid]
-            ]
-        )
-        for component in self._card_component_store[card_uuid]:
-            rendered_obj = _render_card_component(component)
-            if rendered_obj is None:
-                continue
-            serialized_components.append(rendered_obj)
-        if has_user_components and len(serialized_components) > 0:
-            serialized_components = [
-                SectionComponent(contents=serialized_components).render()
-            ]
-        return serialized_components
+        return self._card_component_store[card_uuid]._serialize_components()
 
 
 def _render_card_component(component):
