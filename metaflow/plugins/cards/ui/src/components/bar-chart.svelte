@@ -11,6 +11,7 @@
   } from "chart.js";
   import type { ChartConfiguration } from "chart.js";
   import { COLORS_LIST } from "../constants";
+  import { onMount } from "svelte";
 
   Chart.register(
     BarElement,
@@ -24,29 +25,43 @@
   $: ({ config, data, labels } = componentData);
 
   let el: HTMLCanvasElement;
+  let chart: Chart;
 
-  const chartConfiguration: ChartConfiguration = config || {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        {
-          backgroundColor: COLORS_LIST[2],
-          borderColor: COLORS_LIST[2],
-          data: data || [],
-        },
-      ],
-    },
-    options: {
-      plugins: {
-        legend: {
-          display: false,
+  const createChart = () => {
+    const chartConfiguration: ChartConfiguration = config || {
+      type: "bar",
+      data: {
+        labels,
+        datasets: [
+          {
+            backgroundColor: COLORS_LIST[2],
+            borderColor: COLORS_LIST[2],
+            data: data || [],
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          legend: {
+            display: false,
+          },
         },
       },
-    },
-  };
+    };
+    chart = new Chart(el, chartConfiguration);
+  }
 
-  $: el && new Chart(el, chartConfiguration);
+
+  onMount(createChart);
+
+  $: {
+    if (chart) {
+      const { data, labels,} = componentData;
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = data || [];
+      chart.update();
+    }
+  }
 </script>
 
 <div data-component="bar-chart">

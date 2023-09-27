@@ -1,4 +1,3 @@
-<!-- render a line chart using chart.js, note, we do tree-shaking method, so register any components as needed -->
 <script lang="ts">
   import type * as types from "../types";
   import {
@@ -11,6 +10,7 @@
   } from "chart.js";
   import type { ChartConfiguration } from "chart.js";
   import { COLORS_LIST } from "../constants";
+  import { onMount } from "svelte";
 
   Chart.register(
     LineElement,
@@ -21,32 +21,44 @@
   );
 
   export let componentData: types.LineChartComponent;
-  $: ({ config, data, labels } = componentData);
-
   let el: HTMLCanvasElement;
+  let chart: Chart;
 
-  const chartConfiguration: ChartConfiguration = config || {
-    type: "line",
-    data: {
-      labels,
-      datasets: [
-        {
-          backgroundColor: COLORS_LIST[2],
-          borderColor: COLORS_LIST[2],
-          data: data || [],
-        },
-      ],
-    },
-    options: {
-      plugins: {
-        legend: {
-          display: false,
+  const createChart = () => {
+    const { config, data, labels } = componentData;
+    const chartConfiguration: ChartConfiguration = config || {
+      type: "line",
+      data: {
+        labels,
+        datasets: [
+          {
+            backgroundColor: COLORS_LIST[2],
+            borderColor: COLORS_LIST[2],
+            data: data || [],
+          },
+        ],
+      },
+      options: {
+        plugins: {
+          legend: {
+            display: false,
+          },
         },
       },
-    },
+    };
+    chart = new Chart(el, chartConfiguration);
   };
 
-  $: el && new Chart(el, chartConfiguration);
+  onMount(createChart);
+
+  $: {
+    if (chart) {
+      const { data, labels,} = componentData;
+      chart.data.labels = labels;
+      chart.data.datasets[0].data = data || [];
+      chart.update();
+    }
+  }
 </script>
 
 <div data-component="line-chart">
