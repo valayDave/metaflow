@@ -9,6 +9,12 @@ from metaflow import current
 ASYNC_TIMEOUT = 30
 
 
+def warning_message(message, logger=None, ts=False):
+    msg = "[@card WARNING] %s" % message
+    if logger:
+        logger(msg, timestamp=ts, bad=True)
+
+
 class CardProcessManager:
     """
     This class is responsible for managing the card creation processes.
@@ -44,8 +50,27 @@ class CardProcessManager:
 
 
 class CardCreator:
-    def __init__(self, top_level_options):
-        self._top_level_options = top_level_options
+
+    state_manager = None  # of type `CardStateManager`
+
+    def __init__(
+        self,
+        base_command=None,
+        pathspec=None,
+        # TODO Add a pathspec somewhere here so that it can instantiate correctly.
+    ):
+        self._base_command = base_command
+        self._pathspec = pathspec
+
+    @property
+    def pathspec(self):
+        return self._pathspec
+
+    def _dump_state_to_dict(self):
+        return {
+            "base_command": self._base_command,
+            "pathspec": self._pathspec,
+        }
 
     def create(
         self,
@@ -57,6 +82,8 @@ class CardCreator:
         logger=None,
         mode="render",
         final=False,
+        component_serialzer=None,
+        fetch_latest_data=None,
     ):
         # warning_message("calling proc for uuid %s" % self._card_uuid, self._logger)
         if mode != "render" and not runtime_card:
@@ -67,10 +94,9 @@ class CardCreator:
             # if we are just updating data
             component_strings = []
         else:
-            component_strings = current.card._serialize_components(card_uuid)
-
-        data = current.card._get_latest_data(card_uuid, final=final)
-        runspec = "/".join([current.run_id, current.step_name, current.task_id])
+            component_strings = component_serialzer()
+        data = fetch_latest_data(final=final)
+        runspec = "/".join(self._pathspec.split("/")[1:])
         self._run_cards_subprocess(
             card_uuid,
             user_set_card_id,
@@ -111,12 +137,13 @@ class CardCreator:
             json.dump(data, data_file)
             data_file.seek(0)
 
-        executable = sys.executable
-        cmd = [
-            executable,
-            sys.argv[0],
-        ]
-        cmd += self._top_level_options + [
+        if self.state_manager is not None:
+            self.state_manager._save_card_state(
+                card_uuid, components=component_strings, data=data
+            )
+
+        cmd = []
+        cmd += self._base_command + [
             "card",
             "create",
             runspec,
@@ -156,6 +183,7 @@ class CardCreator:
             timeout=decorator_attributes["timeout"],
             wait=wait,
         )
+        # warning_message(str(cmd), logger)
         if fail:
             resp = "" if response is None else response.decode("utf-8")
             logger(

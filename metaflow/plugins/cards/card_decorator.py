@@ -2,6 +2,7 @@ import subprocess
 import os
 import tempfile
 import sys
+from functools import partial
 import time
 import json
 
@@ -10,8 +11,10 @@ from typing import Dict, Any
 from metaflow.decorators import StepDecorator, flow_decorators
 from metaflow.current import current
 from metaflow.util import to_unicode
+from metaflow.metaflow_config import DATASTORE_LOCAL_DIR
 from .component_serializer import CardComponentCollector, get_card_class
 from .card_creator import CardCreator
+from .runtime_collector_state import CardStateManager
 
 
 # from metaflow import get_metadata
@@ -66,6 +69,8 @@ class CardDecorator(StepDecorator):
 
     card_creator = None
 
+    _collector_state_dump_file = None
+
     def __init__(self, *args, **kwargs):
         super(CardDecorator, self).__init__(*args, **kwargs)
         self._task_datastore = None
@@ -75,6 +80,8 @@ class CardDecorator(StepDecorator):
         self._is_editable = False
         self._card_uuid = None
         self._user_set_card_id = None
+        self._current_step = None
+        self._state_manager = None  # This is set on a per TASK basis
 
     @classmethod
     def _set_card_creator(cls, card_creator):
@@ -135,6 +142,7 @@ class CardDecorator(StepDecorator):
         ubf_context,
         inputs,
     ):
+
         self._task_datastore = task_datastore
         self._metadata = metadata
 
@@ -167,11 +175,17 @@ class CardDecorator(StepDecorator):
             warning_message(wrn_msg, self._logger)
             self._user_set_card_id = None
 
+        pathspec = "/".join([flow.name, str(run_id), step_name, str(task_id)])
         # As we have multiple decorators,
         # we need to ensure that `current.card` has `CardComponentCollector` instantiated only once.
         if not self._is_event_registered("pre-step"):
             self._register_event("pre-step")
-            self._set_card_creator(CardCreator(self._create_top_level_args()))
+            self._set_card_creator(
+                CardCreator(
+                    base_command=self._create_base_command(),
+                    pathspec=pathspec,
+                )
+            )
 
             current._update_env(
                 {"card": CardComponentCollector(self._logger, self.card_creator)}
@@ -198,6 +212,22 @@ class CardDecorator(StepDecorator):
         # This will set up the `current.card` object for usage inside `@step` code.
         if self.step_counter == self.total_decos_on_step[step_name]:
             current.card._finalize()
+            self._dump_state_of_collector_to_file(pathspec)
+            # Set env var here so that any process spawned
+            # by this process can access the card state.
+            os.environ["METAFLOW_CARD_PATHSPEC"] = pathspec
+
+    def task_exception(
+        self, exception, step_name, flow, graph, retry_count, max_user_code_retries
+    ):
+        if self._state_manager is not None:
+            self._state_manager.done()
+
+    def _dump_state_of_collector_to_file(self, pathspec):
+        # Create a directory in the DATASTORE_LOCAL_DIR like `DATASTORE_LOCAL_DIR/`
+        self._state_manager = CardStateManager(pathspec)
+        self.card_creator.state_manager = self._state_manager
+        self._state_manager.component_collector.save(current.card._dump_state_to_dict())
 
     def task_finished(
         self, step_name, flow, graph, is_task_ok, retry_count, max_user_code_retries
@@ -209,10 +239,17 @@ class CardDecorator(StepDecorator):
             decorator_attributes=self.attributes,
             card_options=self.card_options,
             logger=self._logger,
+            fetch_latest_data=partial(current.card._get_latest_data, self._card_uuid),
+            component_serialzer=partial(
+                current.card._serialize_components, self._card_uuid
+            ),
         )
         if is_task_ok:
             self.card_creator.create(mode="render", **create_options)
             self.card_creator.create(mode="refresh", final=True, **create_options)
+            current.card._finished()
+            if self._state_manager is not None:
+                self._state_manager.done()
 
     @staticmethod
     def _options(mapping):
@@ -225,7 +262,7 @@ class CardDecorator(StepDecorator):
                     if not isinstance(value, bool):
                         yield to_unicode(value)
 
-    def _create_top_level_args(self):
+    def _create_base_command(self):
         top_level_options = {
             "quiet": True,
             "metadata": self._metadata.TYPE,
@@ -238,4 +275,6 @@ class CardDecorator(StepDecorator):
             # We don't provide --with as all execution is taking place in
             # the context of the main process
         }
-        return list(self._options(top_level_options))
+        executable = sys.executable
+        cmd = [executable, sys.argv[0]]
+        return cmd + list(self._options(top_level_options))
