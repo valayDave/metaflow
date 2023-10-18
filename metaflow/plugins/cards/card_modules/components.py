@@ -39,6 +39,11 @@ class Artifact(UserComponent):
         Use a truncated representation.
     """
 
+    REALTIME_UPDATABLE = True
+
+    def update(self, artifact):
+        self._artifact = artifact
+
     def __init__(
         self, artifact: Any, name: Optional[str] = None, compressed: bool = True
     ):
@@ -52,7 +57,9 @@ class Artifact(UserComponent):
         artifact["name"] = None
         if self._name is not None:
             artifact["name"] = str(self._name)
-        return ArtifactsComponent(data=[artifact]).render()
+        af_component = ArtifactsComponent(data=[artifact])
+        af_component.component_id = self.component_id
+        return af_component.render()
 
 
 class Table(UserComponent):
@@ -434,9 +441,16 @@ class Markdown(UserComponent):
         Text formatted in Markdown.
     """
 
+    REALTIME_UPDATABLE = True
+
+    def update(self, text=None):
+        self._text = text
+
     def __init__(self, text=None):
         self._text = text
 
     @render_safely
     def render(self):
-        return MarkdownComponent(self._text).render()
+        comp = MarkdownComponent(self._text)
+        comp.component_id = self.component_id
+        return comp.render()
