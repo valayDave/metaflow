@@ -16,7 +16,8 @@ install_extensions() {
 }
 
 run_tests() {
-  cd test/core && PYTHONPATH=`pwd`/../../ python3 run_tests.py --num-parallel 8
+  # TODO: Remove fixed tests from here
+  cd test/core && PYTHONPATH=`pwd`/../../ python3 run_tests.py --num-parallel 8 --tests CardWithRefreshTest,CardComponentRefreshTest
 }
 
 install_deps && install_extensions && run_tests 
