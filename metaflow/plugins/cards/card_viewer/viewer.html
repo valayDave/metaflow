@@ -1,147 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Metaflow Run</title>
+    <style>
+      body {
+        font-size: 100%;
+        font-family: sans-serif;
+        padding: 0;
+        margin: 0;
+        display: flex;
+        flex-direction: column;
+        height: 100vh;
+        width: 100%;
+        overflow: hidden;
+      }
 
-<html>
-    <head>
-    <style type="text/css">
-        body{
-            font-size: 100%;
-            font-family: sans-serif;
-            padding: 0;
-            margin: 0;
-        }
-        iframe{
-            height: 2000;
-            width: 80%;
-            border: 0px;
-        }
-        #header{
-            padding: 20px;
-            padding-top: 10px;
-            margin-bottom: 20px;
-            background: #f6f6f6;
-            color: #666;
-            box-shadow: 0px 5px 10px #eee;
-        }
-        #header h1{
-            font-size: 140%;
-        }
+      header {
+        background: pink;
+        height: 65px;
+        flex: 0 1 auto;
+        flex-grow: none;
+        background: #f9f9f9;
+        display: flex;
+        justify-content: space-evenly;
+      }
+
+      header > div {
+        padding: 1rem;
+        flex: 1;
+        display: flex;
+        align-items: center;
+      }
+
+      header > div:nth-child(2) {
+        background: green;
+        text-align: center;
+        flex: 2;
+        justify-content: center;
+      }
+
+      header > div:nth-child(3) {
+        background: blue;
+        text-align: right;
+        justify-content: flex-end;
+      }
+
+      .content {
+        flex: 1 1 auto;
+        background: orange;
+        overflow-y: scroll;
+      }
+
+      iframe {
+        background: pink;
+        width: 100%;
+        height: calc(100vh - 65px);
+        outline: none;
+        border: 0;
+      }
     </style>
-    <head>
-<body>
+  </head>
+  <body>
+    <header>
+      <div>
+        <img src="" alt="Metaflow" />
+        <h1 id="header-title">Metaflow Run</h1>
+      </div>
+      <div>
+        <select name="runSelector" id="selector">
+          <option value="1">First</option>
+          <option value="2">Second</option>
+          <option value="3">Third</option>
+        </select>
+      </div>
+      <div>
+        <div id="task-status" class="">Task Completed</div>
+        <div id="task-action" class="">Pause</div>
+      </div>
+    </header>
+    <div class="content">
+      <iframe id="card-frame"></iframe>
+    </div>
 
-<div id="header">
-<h1 id="title">Loading the latest run..</h1>
+    <script>
+      (() => {
+        // setup constants
+        const DATA_UPDATE_POLL_INTERVAL = 5000;
+        const RUN_UPDATE_POLL_INTERVAL = 10000;
 
+        // setup DOM elements
+        const selector = document.getElementById("selector");
+        selector?.addEventListener("change", (event) => {
+          selectedCard = event.target.value;
+          updateIframe(event.target.name, event.target.value);
+        });
 
+        // setup state
+        let currentState = "ok";
+        let currentCardsLength = 0;
+        let selectedCard = "";
 
-<script>
-// TODO : make `DATA_UPDATE_POLL_INTERVAL` configurable when starting the server
-const DATA_UPDATE_POLL_INTERVAL = 5000;
-const RUN_UPDATE_POLL_INTERVAL = 10000;
-async function data_update(frame_src, data_url, update_fun, reload_token){
-    const response = await fetch(data_url);
-    const resp = await response.json();
-    let frame = document.getElementById('cardFrame');
-    // first check the user hasn't switched to another card
-    console.log('data', resp, 'reload_token', reload_token)
-    if (frame.src == frame_src){
-        // do we have valid data?
-        if (resp.status == 'not found')
-            // if not, try again later
-            setTimeout(() => data_update(frame_src, data_url, update_fun, reload_token), DATA_UPDATE_POLL_INTERVAL);
-        else{            
-            console.log("data is valid")
-            // yes, data is valid
-            // do we have the right version of the card content?
-            if (resp.payload.reload_token == reload_token){
-                console.log()
-                // update data and check that the return value is valid. In particular,
-                // the result is undefined if the card has changed and update_fun is invalid
-                if (update_fun(resp.payload.data))
-                    setTimeout(() => data_update(frame_src, data_url, update_fun, reload_token), DATA_UPDATE_POLL_INTERVAL);
-            }else{
-                // card is outdated, reload it. This will re-fetch data, so we will be back
-                // in this function soon
-                frame.contentWindow.location.reload();
+        /**
+         * Handle any changes to the status of the page
+         */
+        function handleStatus(status) {
+          if (status === "complete") {
+            currentState = "complete";
+          } else if (status !== "ok") {
+            currentState = "error";
+          }
+
+          const statusDiv = document.getElementById("task-status");
+          if (statusDiv) {
+            statusDiv.innerText = status;
+            currentState === "error"
+              ? statusDiv.classList.add("error")
+              : statusDiv.classList.remove("error");
+          }
+        }
+
+        /**
+         * Handle any changes to the cards
+         */
+        function handleCards(cards) {
+          currentCardsLength = cards.length;
+          selector.innerHTML = "";
+
+          // create options for each card
+          cards.forEach((card) => {
+            const option = document.createElement("option");
+            option.value = card.card;
+            option.innerText = card.label;
+            option.selected = card.card === selectedCard;
+            selector.appendChild(option);
+          });
+        }
+
+        /**
+         * Update the iframe with the new card
+         */
+        function updateIframe(name, value) {
+          document.getElementsByTagName("title").innerHTML = name;
+          const iframe = document.getElementById("card-frame");
+          iframe.src = `/card/${value}`;
+        }
+
+        /**
+         * Main loop function
+         */
+        async function main() {
+          try {
+            const runInfoRequest = await fetch("/runinfo");
+            const runInfo = await runInfoRequest.json();
+
+            if (runInfo.status !== currentState) {
+              handleStatus(runInfo.status);
             }
+
+            if (runInfo?.cards.length !== currentCardsLength) {
+              handleCards(runInfo.cards);
+            }
+
+            if (!selectedCard) {
+              selectedCard = runInfo.cards[0].task;
+              updateIframe(runInfo.cards[0].label, runInfo.cards[0].card);
+            }
+
+            console.log("runInfo", runInfo);
+          } catch (error) {
+            console.error(error);
+          }
+
+          // only continue polling if the status is ok
+          if (status === "ok") {
+            setTimeout(main, RUN_UPDATE_POLL_INTERVAL);
+          }
         }
-    }
-}
 
-function card_loaded(){
-    let frame = document.getElementById('cardFrame');
-    let update_fun = frame.contentWindow.metaflow_card_update;
-    const reload_token = frame.contentWindow.METAFLOW_RELOAD_TOKEN;
-    frame.style.display = 'block';
-    if (update_fun){
-        console.log("Update fn found")
-        console.log(update_fun)
-        let data_url = "/data/" + frame.src.split('/').slice(4).join('/');
-        setTimeout(() => data_update(frame.src, data_url, update_fun, reload_token), DATA_UPDATE_POLL_INTERVAL);
-    }
-}
-
-function load_card(){
-    let cardEl = document.getElementById("cards");
-    let frame = document.getElementById('cardFrame');
-    frame.style.display = 'none';
-    if (cardEl.options.length > 0){
-        const val = cardEl.options[cardEl.selectedIndex].value;
-        frame.src = "/card/" + val;
-    }
-}
-
-async function refresh_cards(){
-    const response = await fetch("/runinfo");
-    const info = await response.json();
-    let shouldUpdate = false;
-    if (info.status == 'ok'){
-        let frame = document.getElementById('cardFrame');
-
-        let cardEl = document.getElementById("cards");
-        let selected;
-        if (cardEl.options[cardEl.selectedIndex])
-            selected = cardEl.options[cardEl.selectedIndex].value;
-        cardEl.innerHTML = '';
-
-        let title = info.flow + "/" + info.run_id;
-        if (title != document.getElementById("title").innerHTML){
-            frame.style.display = 'none';
-            shouldUpdate = true;
-        }
-        document.getElementById("title").innerHTML = title;
-
-        for (let i = 0; i < info.cards.length; i++){
-            let el = document.createElement("option");
-            el.value = info.cards[i].card;
-            el.innerHTML = info.cards[i].label;
-            if (el.innerHTML == selected)
-                el.select
-            cardEl.appendChild(el);
-        }
-        if (!frame.src || shouldUpdate)
-            load_card();
-
-        if (selected)
-            cardEl.value = selected;
-        else if (info.cards.length > 0)
-            cardEl.selectedIndex = 0;
-    }
-    setTimeout(refresh_cards, RUN_UPDATE_POLL_INTERVAL);
-}
-
-window.onload = function(){
-    refresh_cards();
-}
-
-</script>
-
-<select id="cards" onChange="load_card()">
-</select>
-</div>
-
-<div>
-<iframe id="cardFrame" onLoad="card_loaded()"></iframe>
-</div>
-
-<body>
+        window.onload = () => {
+          main();
+        };
+      })();
+    </script>
+  </body>
 </html>
