@@ -25,10 +25,16 @@
       window.__MF_DATA__ = {};
     }
     window.__MF_DATA__["{{{card_data_id}}}"] = "{{{task_data}}}"
+
   </script>
   <script>
     {{{javascript}}}
   </script>
+  {{{#RENDER_COMPLETE}}}
+  <script>
+    window.metaflow_card_update = undefined;
+  </script>
+  {{{/RENDER_COMPLETE}}}
 </body>
 
 </html>

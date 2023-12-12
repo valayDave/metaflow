@@ -634,6 +634,7 @@ class DefaultCard(MetaflowCard):
             title=task.pathspec,
             css=CSS_DATA,
             card_data_id=uuid.uuid4(),
+            RENDER_COMPLETE=not runtime
         )
         return pt.render(RENDER_TEMPLATE, data_dict)
 
