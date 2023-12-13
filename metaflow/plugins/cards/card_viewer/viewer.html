@@ -205,21 +205,19 @@
         async function watchForCardChanges(iframe) {
           // replace the /card/ url with the data url
           const dataUri = iframe.src.replace(/.*\/card\//, "/data/");
-
+          let resp;
           try {
             const req = await fetch(dataUri);
-            const resp = await req.json();
-
+            resp = await req.json();
             // setup UI to show complete and status
             handleStatus(resp.status, resp?.is_complete);
 
             // grab update fn from iframe
             const update = iframe.contentWindow?.metaflow_card_update;
-
             // make sure we're able to update the card
             if (resp.status !== "ok" || !update || !resp.payload?.data) {
               console.log(
-                "Unable to load card, something is not right.",
+                "Data-updates not taking place because either : status is not `ok` or update function is not available or data is not available",
                 resp,
                 update
               );
@@ -235,7 +233,6 @@
           } catch (error) {
             console.error(error);
           }
-
           // if this update is not the last one, run it again!
           if (!resp?.is_complete) {
             setTimeout(
@@ -252,8 +249,10 @@
           document.getElementsByTagName("title").innerHTML = name;
           const iframe = document.getElementById("card-frame");
           iframe.src = `/card/${value}`;
-
-          watchForCardChanges(iframe);
+          iframe.onload = () => {
+            watchForCardChanges(iframe);
+          };
+          
         }
 
         /**

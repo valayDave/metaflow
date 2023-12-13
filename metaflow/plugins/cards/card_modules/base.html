@@ -30,11 +30,16 @@
   <script>
     {{{javascript}}}
   </script>
-  {{{#RENDER_COMPLETE}}}
+  {{#RENDER_COMPLETE}}
   <script>
     window.metaflow_card_update = undefined;
   </script>
-  {{{/RENDER_COMPLETE}}}
+  {{/RENDER_COMPLETE}}
+  {{^RENDER_COMPLETE}}
+  <script> 
+  // This Card was Designed to be Realtime Updatable
+  </script>
+  {{/RENDER_COMPLETE}}
 </body>
 
 </html>
