@@ -139,7 +139,7 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
             )
         )
         if len(cards) == 0:
-            self._response("Card not found", code=404)
+            self._response({"status": "Card Not Found"}, code=404)
             return
         selected_card = cards[0]
         self._response(selected_card.get().encode("utf-8"))
@@ -153,14 +153,33 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
             )
         )
         if len(cards) == 0:
-            self._response("Card not found", code=404)
+            self._response(
+                {
+                    "status": "Card Not Found",
+                },
+                is_json=True,
+                code=404,
+            )
             return
+
+        status = "ok"
+        task_object = self.card_options.run_object[step][task_id]
+        is_complete = task_object.finished
         selected_card = cards[0]
         card_data = selected_card.get_data()
         if card_data is not None:
-            self._response({"status": "ok", "payload": card_data}, is_json=True)
+            if not task_object.successful and task_object.finished:
+                status = "Task Failed"
+            self._response(
+                {"status": status, "payload": card_data, "is_complete": is_complete},
+                is_json=True,
+            )
         else:
-            self._response({"status": "not found"}, is_json=True)
+            self._response(
+                {"status": "Card Data Not Found", "is_complete": is_complete},
+                is_json=True,
+                code=404,
+            )
 
     def _response(self, body, is_json=False, code=200):
         self.send_response(code)
