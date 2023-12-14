@@ -154,12 +154,15 @@
 
           // change the text of the status depending if its in progress or not
           if (statusDiv) {
-            if (isComplete) {
+            // complete
+            if (isComplete && status === "ok") {
               statusDiv.innerText = "Task Is Complete";
+              // running
             } else if (!isComplete && status === "ok") {
               statusDiv.innerText = "Task Is Running";
+              // error
             } else {
-              statusDiv.innerText = status;
+              statusDiv.innerText = `&#9888; Task failed: ${status}`;
             }
 
             // toggle the status div
@@ -252,7 +255,6 @@
           iframe.onload = () => {
             watchForCardChanges(iframe);
           };
-          
         }
 
         /**
