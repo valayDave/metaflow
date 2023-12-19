@@ -100,7 +100,7 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
         if prefix in self.ROUTES:
             self.ROUTES[prefix](self, suffix)
         else:
-            self._response(CARD_VIEWER_HTML.encode("utf-8"))
+            self._response(open(VIEWER_PATH).read().encode("utf-8"))
 
     def get_runinfo(self, suffix):
         task_card_generator = cards_for_run(
