@@ -82,6 +82,7 @@ class CardServerOptions:
         flow_datastore,
         follow_new_runs,
         max_cards=20,
+        poll_interval=5,
     ):
         from metaflow import Run
 
@@ -94,6 +95,7 @@ class CardServerOptions:
         self.flow_datastore = flow_datastore
         self.max_cards = max_cards
         self.follow_new_runs = follow_new_runs
+        self.poll_interval = poll_interval
 
         self._parent_conn, self._child_conn = Pipe()
 
@@ -225,7 +227,13 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
                     card="%s/%s" % (pathspec, card.hash),
                 )
             )
-        resp = {"status": "ok", "flow": flow_name, "run_id": run_id, "cards": cards}
+        resp = {
+            "status": "ok",
+            "flow": flow_name,
+            "run_id": run_id,
+            "cards": cards,
+            "poll_interval": self.card_options.poll_interval,
+        }
         self._response(resp, is_json=True)
 
     def get_card(self, suffix):

@@ -976,6 +976,13 @@ def list(
     help="Namespace of the flow",
 )
 @click.option(
+    "--poll-interval",
+    default=5,
+    show_default=True,
+    type=int,
+    help="Polling interval of the card viewer.",
+)
+@click.option(
     "--max-cards",
     default=30,
     show_default=True,
@@ -983,7 +990,7 @@ def list(
     help="Maximum number of cards to be shown at any time by the server",
 )
 @click.pass_context
-def server(ctx, run_id, port, user_namespace, max_cards):
+def server(ctx, run_id, port, user_namespace, poll_interval, max_cards):
     from .card_server import create_card_server, CardServerOptions
 
     user_namespace = resolve_identity() if user_namespace is None else user_namespace
@@ -1001,6 +1008,7 @@ def server(ctx, run_id, port, user_namespace, max_cards):
         flow_datastore=ctx.obj.flow_datastore,
         max_cards=max_cards,
         follow_new_runs=follow_new_runs,
+        poll_interval=poll_interval,
     )
     create_card_server(options, port, ctx.obj)
 
