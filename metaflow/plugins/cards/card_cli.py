@@ -1012,7 +1012,7 @@ def _get_run_from_cli_set_runid(obj, run_id):
     from metaflow import Run
 
     flow_name = obj.flow.name
-    if len(run_id.split("/")) == 1:
+    if len(run_id.split("/")) > 1:
         raise CommandException(
             "run_id should NOT be of the form: `<flowname>/<runid>`. Please provide only run-id"
         )
@@ -1034,7 +1034,9 @@ def _get_run_object(obj, run_id, user_namespace):
 
     if run_id is not None:
         follow_new_runs = False
-        return _get_run_from_cli_set_runid(obj, run_id), follow_new_runs, None
+        run = _get_run_from_cli_set_runid(obj, run_id)
+        obj.echo("Using run-id %s" % run.pathspec, fg="blue", bold=False)
+        return run, follow_new_runs, None
 
     _msg = "Searching for runs in namespace: %s" % user_namespace
     obj.echo(_msg, fg="blue", bold=False)
@@ -1061,5 +1063,5 @@ def _get_run_object(obj, run_id, user_namespace):
         )
         return None, follow_new_runs, _status_msg
 
-    obj.echo("Using run-id %s" % run_id, fg="blue", bold=False)
+    obj.echo("Using run-id %s" % run.pathspec, fg="blue", bold=False)
     return run, follow_new_runs, None
