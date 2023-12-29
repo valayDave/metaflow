@@ -724,9 +724,10 @@ class VegaChart(UserComponent):
 
     REALTIME_UPDATABLE = True
 
-    def __init__(self, spec, data=None):
+    def __init__(self, spec, data=None, show_controls=False):
         self._spec = spec
         self._data = data
+        self._show_controls = show_controls
 
     def update(self, data=None, spec=None):
         if spec is not None:
@@ -765,4 +766,6 @@ class VegaChart(UserComponent):
             "spec": self._spec,
             "data": self._data,
         }
+        if not self._show_controls:
+            data["options"] = {"actions": False}
         return data
