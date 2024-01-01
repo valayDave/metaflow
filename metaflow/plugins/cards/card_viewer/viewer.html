@@ -184,10 +184,15 @@
             console.log("Data was not in the correct format");
             return;
           }
+          // console.log("Running ON CARDS LOADED", cards, flow, run_id)
 
           // reset
           currentCardsLength = cards.length;
           selector.innerHTML = "";
+          // if the task has finished, change to the next card
+          changeToNewCardIfTaskHasFinished(
+            runInfo
+          )
 
           // create select options for each card
           cards.reverse().forEach((card) => {
@@ -260,6 +265,26 @@
           };
         }
 
+        function changeToNewCardIfTaskHasFinished(runInfo){
+          // search for the selectedCard in the runInfo
+          const card = runInfo.cards.find((card) => card.card === selectedCard);
+          // if the card object contains `finished` === True, then change to the next card that has not finished
+          if (card?.finished){
+            // find the index of the current card
+            const currentCardIndex = runInfo.cards.findIndex((card) => card.card === selectedCard);
+            // find the next card that has not finished
+            const nextCard = runInfo.cards.find((card) => !card.finished);
+            // if there is a next card, change to it
+            
+            console.log("nextCard", nextCard)
+            if (nextCard){
+              selectedCard = nextCard.card;
+              handleLoadCard(nextCard.label, nextCard.card);
+            }
+
+          }
+        }
+
         /**
          * Main loop function
          */
@@ -287,9 +312,9 @@
               if (runInfo?.cards.length !== currentCardsLength) {
                 onCardsLoaded(runInfo);
               }
-  
+              // if there is no selected card, select the first one
               if (!selectedCard) {
-                selectedCard = runInfo.cards[0].task;
+                selectedCard = runInfo.cards[0].card;
                 handleLoadCard(runInfo.cards[0].label, runInfo.cards[0].card);
               }
             }else{
