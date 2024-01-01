@@ -4,6 +4,7 @@ from http.server import BaseHTTPRequestHandler
 from threading import Thread
 from multiprocessing import Pipe
 from multiprocessing.connection import Connection
+from urllib.parse import urlparse
 import time
 
 try:
@@ -237,7 +238,9 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
         self._response(resp, is_json=True)
 
     def get_card(self, suffix):
-        flow, run_id, step, task_id, card_hash = suffix.split("/")
+        _suffix = urlparse(self.path).path
+        _, flow, run_id, step, task_id, card_hash = _suffix.strip("/").split("/")
+
         pathspec = "/".join([flow, run_id, step, task_id])
         cards = list(
             cards_for_task(
@@ -251,7 +254,8 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
         self._response(selected_card.get().encode("utf-8"))
 
     def get_data(self, suffix):
-        flow, run_id, step, task_id, card_hash = suffix.split("/")
+        _suffix = urlparse(self.path).path
+        _, flow, run_id, step, task_id, card_hash = _suffix.strip("/").split("/")
         pathspec = "/".join([flow, run_id, step, task_id])
         cards = list(
             cards_for_task(
