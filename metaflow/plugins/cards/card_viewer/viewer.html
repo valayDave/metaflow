@@ -254,7 +254,7 @@
         function handleLoadCard(name, value) {
           document.getElementsByTagName("title").innerHTML = name;
           const iframe = document.getElementById("card-frame");
-          iframe.src = `/card/${value}`;
+          iframe.src = `/card/${value}?embed=true`;
           iframe.onload = () => {
             watchForCardChanges(iframe);
           };
