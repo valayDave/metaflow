@@ -273,11 +273,23 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
             return
 
         status = "ok"
-        task_object = self.card_options.run_object[step][task_id]
+        try:
+            task_object = self.card_options.run_object[step][task_id]
+        except KeyError:
+            return self._response(
+                {"status": "Task Not Found", "is_complete": False},
+                is_json=True,
+                code=404,
+            )
+
         is_complete = task_object.finished
         selected_card = cards[0]
         card_data = selected_card.get_data()
         if card_data is not None:
+            self.log_message(
+                "Task Success: %s, Task Finished: %s"
+                % (task_object.successful, task_object.finished)
+            )
             if not task_object.successful and task_object.finished:
                 status = "Task Failed"
             self._response(
@@ -317,5 +329,10 @@ def create_card_server(card_options: CardServerOptions, port, ctx_obj):
         fg="green",
         bold=True,
     )
+    # Disable logging if not in debug mode
+    if "METAFLOW_DEBUG_CARD_SERVER" not in os.environ:
+        CardViewerRoutes.log_request = lambda *args, **kwargs: None
+        CardViewerRoutes.log_message = lambda *args, **kwargs: None
+
     server = ThreadingHTTPServer(server_addr, CardViewerRoutes)
     server.serve_forever()
