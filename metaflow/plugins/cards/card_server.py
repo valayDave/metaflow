@@ -215,6 +215,8 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
         cards = []
         for pathspec, card in task_card_generator:
             step, task = pathspec.split("/")[-2:]
+            _task = self.card_options.run_object[step][task]
+            task_finished = True if _task.finished else False
             cards.append(
                 dict(
                     task=pathspec,
@@ -225,6 +227,7 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
                         path=card.path,
                         id=card.id,
                     ),
+                    finished=task_finished,
                     card="%s/%s" % (pathspec, card.hash),
                 )
             )
