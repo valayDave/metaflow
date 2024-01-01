@@ -999,10 +999,9 @@ def server(ctx, run_id, port, user_namespace, poll_interval, max_cards):
     )
     if _status_message is not None:
         ctx.obj.echo(_status_message, fg="red")
-        return
     options = CardServerOptions(
         flow_name=ctx.obj.flow.name,
-        run_object=run,  # TODO : Fix this run thing over here.
+        run_object=run, 
         only_running=False,
         follow_resumed=False,
         flow_datastore=ctx.obj.flow_datastore,
