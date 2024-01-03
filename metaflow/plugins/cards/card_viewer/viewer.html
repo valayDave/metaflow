@@ -136,8 +136,8 @@
     <script type="application/javascript">
       (() => {
         // setup constants
-        const DATA_UPDATE_POLL_INTERVAL = 5000;
-        const RUN_UPDATE_POLL_INTERVAL = 10000;
+        let DATA_UPDATE_POLL_INTERVAL = 5000;
+        let RUN_UPDATE_POLL_INTERVAL = 10000;
 
         // setup state
         let currentCardsLength = 0;
@@ -275,6 +275,12 @@
               currentCardsLength = 0;
               selectedCard = "";
               console.log("runInfo", runInfo);
+            }
+            if (runInfo.poll_interval*1000 !== DATA_UPDATE_POLL_INTERVAL){
+              DATA_UPDATE_POLL_INTERVAL = runInfo.poll_interval*1000
+            }
+            if (runInfo.poll_interval*1000 !== RUN_UPDATE_POLL_INTERVAL){
+              RUN_UPDATE_POLL_INTERVAL = runInfo.poll_interval*1000
             }
             if (runInfo?.status === "ok"){
               // only make changes if the cards length has changed
