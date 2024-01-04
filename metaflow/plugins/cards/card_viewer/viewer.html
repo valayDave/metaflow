@@ -190,9 +190,7 @@
           currentCardsLength = cards.length;
           selector.innerHTML = "";
           // if the task has finished, change to the next card
-          changeToNewCardIfTaskHasFinished(
-            runInfo
-          )
+          changeToNewCardIfTaskHasFinished(runInfo);
 
           // create select options for each card
           cards.reverse().forEach((card) => {
@@ -232,15 +230,22 @@
                 resp,
                 update
               );
+            } else {
+              // make appropriate updates by pushing if the reload token matches
+              update &&
+              resp.payload?.reload_token ===
+                iframe.contentWindow.METAFLOW_RELOAD_TOKEN
+                ? update(resp.payload.data)
+                : iframe.contentWindow.location.reload();
+            }
+            // If there is no Update function than we don't need to wire the
+            // periodic updates
+            if (!update) {
+              console.log(
+                "No metaflow_card_update function available. So not running any periodic updates"
+              );
               return;
             }
-
-            // make appropriate updates by pushing if the reload token matches
-            update &&
-            resp.payload?.reload_token ===
-              iframe.contentWindow.METAFLOW_RELOAD_TOKEN
-              ? update(resp.payload.data)
-              : iframe.contentWindow.location.reload();
           } catch (error) {
             console.error(error);
           }
@@ -265,23 +270,24 @@
           };
         }
 
-        function changeToNewCardIfTaskHasFinished(runInfo){
+        function changeToNewCardIfTaskHasFinished(runInfo) {
           // search for the selectedCard in the runInfo
           const card = runInfo.cards.find((card) => card.card === selectedCard);
           // if the card object contains `finished` === True, then change to the next card that has not finished
-          if (card?.finished){
+          if (card?.finished) {
             // find the index of the current card
-            const currentCardIndex = runInfo.cards.findIndex((card) => card.card === selectedCard);
+            const currentCardIndex = runInfo.cards.findIndex(
+              (card) => card.card === selectedCard
+            );
             // find the next card that has not finished
             const nextCard = runInfo.cards.find((card) => !card.finished);
             // if there is a next card, change to it
-            
-            console.log("nextCard", nextCard)
-            if (nextCard){
+
+            console.log("nextCard", nextCard);
+            if (nextCard) {
               selectedCard = nextCard.card;
               handleLoadCard(nextCard.label, nextCard.card);
             }
-
           }
         }
 
@@ -301,13 +307,13 @@
               selectedCard = "";
               console.log("runInfo", runInfo);
             }
-            if (runInfo.poll_interval*1000 !== DATA_UPDATE_POLL_INTERVAL){
-              DATA_UPDATE_POLL_INTERVAL = runInfo.poll_interval*1000
+            if (runInfo.poll_interval * 1000 !== DATA_UPDATE_POLL_INTERVAL) {
+              DATA_UPDATE_POLL_INTERVAL = runInfo.poll_interval * 1000;
             }
-            if (runInfo.poll_interval*1000 !== RUN_UPDATE_POLL_INTERVAL){
-              RUN_UPDATE_POLL_INTERVAL = runInfo.poll_interval*1000
+            if (runInfo.poll_interval * 1000 !== RUN_UPDATE_POLL_INTERVAL) {
+              RUN_UPDATE_POLL_INTERVAL = runInfo.poll_interval * 1000;
             }
-            if (runInfo?.status === "ok"){
+            if (runInfo?.status === "ok") {
               // only make changes if the cards length has changed
               if (runInfo?.cards.length !== currentCardsLength) {
                 onCardsLoaded(runInfo);
@@ -317,14 +323,12 @@
                 selectedCard = runInfo.cards[0].card;
                 handleLoadCard(runInfo.cards[0].label, runInfo.cards[0].card);
               }
-            }else{
-              handleStatus(runInfo?.status, false)
+            } else {
+              handleStatus(runInfo?.status, false);
             }
-
           } catch (error) {
             console.error(error);
           }
-
           // always run the main loop, because a user can start a new run,
           // or restart the web server, and we want the page to continue working
           setTimeout(main, RUN_UPDATE_POLL_INTERVAL);
