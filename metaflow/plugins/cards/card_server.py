@@ -301,7 +301,7 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
             )
         else:
             self._response(
-                {"status": "Card Data Not Found", "is_complete": is_complete},
+                {"status": "ok", "is_complete": is_complete},
                 is_json=True,
                 code=404,
             )
