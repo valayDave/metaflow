@@ -250,7 +250,7 @@
             console.error(error);
           }
           // if this update is not the last one, run it again!
-          if (!resp?.is_complete) {
+          if (!(resp.payload?.reload_token === "final")) {
             setTimeout(
               () => watchForCardChanges(iframe),
               DATA_UPDATE_POLL_INTERVAL
