@@ -37,6 +37,8 @@ CARD_VIEWER_HTML = open(VIEWER_PATH).read()
 
 TASK_CACHE = {}
 
+_ClickLogger = None
+
 
 class RunWatcher(Thread):
     """
@@ -195,7 +197,16 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
     def get_runinfo(self, suffix):
         run_id_changed = self.card_options.refresh_run()
         if run_id_changed:
-            self.log_message("RunID changed in the background")
+            self.log_message(
+                "RunID changed in the background to %s"
+                % self.card_options.run_object.pathspec
+            )
+            _ClickLogger(
+                "RunID changed in the background to %s"
+                % self.card_options.run_object.pathspec,
+                fg="blue",
+            )
+
         if self.card_options.run_object is None:
             self._response(
                 {"status": "No Run Found", "flow": self.card_options.flow_name},
@@ -321,6 +332,8 @@ class CardViewerRoutes(BaseHTTPRequestHandler):
 
 def create_card_server(card_options: CardServerOptions, port, ctx_obj):
     CardViewerRoutes.card_options = card_options
+    global _ClickLogger
+    _ClickLogger = ctx_obj.echo
     if card_options.follow_new_runs:
         CardViewerRoutes.run_watcher = RunWatcher(
             card_options.flow_name, card_options.child_conn
