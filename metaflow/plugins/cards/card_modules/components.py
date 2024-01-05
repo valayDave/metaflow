@@ -761,4 +761,7 @@ class VegaChart(UserComponent):
         }
         if not self._show_controls:
             data["options"] = {"actions": False}
+
+        if "width" not in self._spec:
+            data["spec"]["width"] = "container"
         return data
