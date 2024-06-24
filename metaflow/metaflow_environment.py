@@ -121,7 +121,9 @@ class MetaflowEnvironment(object):
     def _get_install_dependencies_cmd(self, datastore_type):
         cmds = ["%s -m pip install requests -qqq" % self._python()]
         if datastore_type == "s3":
-            cmds.append("%s -m pip install awscli boto3 -qqq" % self._python())
+            cmds.append(
+                "%s -m pip install awscli==1.32.115 boto3 -qqq" % self._python()
+            )
         elif datastore_type == "azure":
             cmds.append(
                 "%s -m pip install azure-identity azure-storage-blob azure-keyvault-secrets simple-azure-blob-downloader -qqq"
