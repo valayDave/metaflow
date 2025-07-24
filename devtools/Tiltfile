@@ -35,7 +35,7 @@ components = {
     "jobset": [],
 }
 
-services_env = os.getenv("SERVICES", "").strip().lower()
+services_env = os.getenv("SERVICES", "all").strip().lower()
 
 if services_env:
     if services_env == "all":
