@@ -18,7 +18,7 @@ allow_k8s_contexts('minikube')
 JOBSET_VERSION = os.getenv("JOBSET_VERSION", "v0.6.0")
 
 # Argo Workflows versions
-ARGO_WORKFLOWS_HELM_CHART_VERSION = os.getenv("ARGO_WORKFLOWS_HELM_CHART_VERSION", "0.44.3")  # Helm chart version
+ARGO_WORKFLOWS_HELM_CHART_VERSION = os.getenv("ARGO_WORKFLOWS_HELM_CHART_VERSION", "0.45.2")  # Helm chart version
 ARGO_WORKFLOWS_IMAGE_TAG = os.getenv("ARGO_WORKFLOWS_IMAGE_TAG", "v3.6.0")  # Argo Workflows application version
 
 # Argo Events versions  
@@ -565,12 +565,12 @@ if "argo-events" in enabled_components:
 if "jobset" in enabled_components:
     # Apply JobSet manifests directly from GitHub releases
     jobset_manifest_url = "https://github.com/kubernetes-sigs/jobset/releases/download/%s/manifests.yaml" % JOBSET_VERSION
-    
-    local_resource(
-        name='jobset-manifests',
-        cmd='kubectl apply --server-side -f %s' % jobset_manifest_url,
-        deps=[],
-        labels=['jobset']
+
+    cmd = "curl -sSL %s" % (jobset_manifest_url)
+    k8s_yaml(
+        local(
+            cmd,
+        )
     )
 
     k8s_resource(
