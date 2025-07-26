@@ -582,6 +582,39 @@ if "jobset" in enabled_components:
     
     config_resources.append('jobset-controller-manager')
 
+    # ClusterRole for jobset operations
+    k8s_yaml(encode_yaml({
+        'apiVersion': 'rbac.authorization.k8s.io/v1',
+        'kind': 'ClusterRole',
+        'metadata': {
+            'name': 'jobset-full-access'
+        },
+        'rules': [{
+            'apiGroups': ['jobset.x-k8s.io'],
+            'resources': ['jobsets'],
+            'verbs': ['*']
+        }]
+    }))
+
+    # ClusterRoleBinding for default service account to access jobsets
+    k8s_yaml(encode_yaml({
+        'apiVersion': 'rbac.authorization.k8s.io/v1',
+        'kind': 'ClusterRoleBinding',
+        'metadata': {
+            'name': 'default-jobset-binding'
+        },
+        'subjects': [{
+            'kind': 'ServiceAccount',
+            'name': 'default',
+            'namespace': 'default'
+        }],
+        'roleRef': {
+            'kind': 'ClusterRole',
+            'name': 'jobset-full-access',
+            'apiGroup': 'rbac.authorization.k8s.io'
+        }
+    }))
+
 #################################################
 # METADATA SERVICE
 #################################################
