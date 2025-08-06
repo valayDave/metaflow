@@ -580,6 +580,8 @@ class ErrorCard(MetaflowCard):
 
     RELOAD_POLICY = MetaflowCard.RELOAD_POLICY_ONCHANGE
 
+    RENDER_ON_TASK_FAILURE = True
+
     def __init__(self, options={}, components=[], graph=None, **kwargs):
         self._only_repr = True
         self._graph = None if graph is None else transform_flow_graph(graph)
@@ -669,6 +671,8 @@ class DefaultCard(MetaflowCard):
     RUNTIME_UPDATABLE = True
 
     RELOAD_POLICY = MetaflowCard.RELOAD_POLICY_ONCHANGE
+
+    RENDER_ON_TASK_FAILURE = True
 
     type = "default"
 

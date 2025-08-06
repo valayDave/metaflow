@@ -231,8 +231,7 @@ class CardDecorator(StepDecorator):
         # card creation process.
         self._metadata_state_manager = MetadataStateManager(self.all_cards_info)
 
-        card_type = self.attributes["type"]
-        card_class = get_card_class(card_type)
+        card_class = self._current_card_class()
 
         self._is_runtime_card = False
         if card_class is not None:  # Card type was not found
@@ -310,6 +309,10 @@ class CardDecorator(StepDecorator):
         if self.step_counter == self.total_decos_on_step[step_name]:
             current.card._finalize()
 
+    def _current_card_class(self):
+        card_type = self.attributes["type"]
+        return get_card_class(card_type)
+
     def task_finished(
         self, step_name, flow, graph, is_task_ok, retry_count, max_user_code_retries
     ):
@@ -321,7 +324,8 @@ class CardDecorator(StepDecorator):
             card_options=self.card_options,
             logger=self._logger,
         )
-        if is_task_ok:
+        card_class = self._current_card_class()
+        if is_task_ok or card_class.RENDER_ON_TASK_FAILURE:
             self.card_creator.create(mode="render", final=True, **create_options)
             self.card_creator.create(mode="refresh", final=True, **create_options)
 

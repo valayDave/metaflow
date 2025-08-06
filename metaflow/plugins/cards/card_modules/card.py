@@ -64,6 +64,7 @@ class MetaflowCard(object):
 
     scope = "task"  # can be task | run
 
+    RENDER_ON_TASK_FAILURE = False
     # FIXME document runtime_data
     runtime_data = None
 
