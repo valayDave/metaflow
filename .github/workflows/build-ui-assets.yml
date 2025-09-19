@@ -1,0 +1,150 @@
+name: Build UI Assets and Create PR
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-pr:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+          cache-dependency-path: metaflow/plugins/cards/ui/package-lock.json
+          
+      - name: Install dependencies
+        working-directory: ./metaflow/plugins/cards/ui
+        run: npm ci
+        
+      - name: Lint and type check
+        working-directory: ./metaflow/plugins/cards/ui
+        run: |
+          npm run check
+          npm run lint
+          
+      - name: Clean previous build artifacts
+        run: |
+          # Remove previous build artifacts to ensure clean build
+          rm -f metaflow/plugins/cards/card_modules/main.js
+          rm -f metaflow/plugins/cards/card_modules/bundle.css
+          rm -f metaflow/plugins/cards/card_modules/main.js.map
+          
+      - name: Build UI assets
+        working-directory: ./metaflow/plugins/cards/ui
+        run: npm run build
+        
+      - name: Verify build outputs
+        run: |
+          # Check that the expected files were created
+          if [[ ! -f "metaflow/plugins/cards/card_modules/main.js" ]]; then
+            echo "::error::main.js was not created by the build process"
+            exit 1
+          fi
+          
+          if [[ ! -f "metaflow/plugins/cards/card_modules/bundle.css" ]]; then
+            echo "::error::bundle.css was not created by the build process"
+            exit 1
+          fi
+          
+          # Check file sizes (they should not be empty)
+          main_size=$(stat -c%s "metaflow/plugins/cards/card_modules/main.js")
+          css_size=$(stat -c%s "metaflow/plugins/cards/card_modules/bundle.css")
+          
+          if [[ $main_size -lt 1000 ]]; then
+            echo "::error::main.js seems too small ($main_size bytes), build may have failed"
+            exit 1
+          fi
+          
+          if [[ $css_size -lt 500 ]]; then
+            echo "::error::bundle.css seems too small ($css_size bytes), build may have failed"
+            exit 1
+          fi
+          
+          echo "✅ Build outputs verified:"
+          echo "  main.js: $main_size bytes"
+          echo "  bundle.css: $css_size bytes"
+        
+      - name: Check for changes
+        id: changes
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          
+          # Check if there are changes to the built files
+          if git diff --quiet metaflow/plugins/cards/card_modules/main.js metaflow/plugins/cards/card_modules/bundle.css; then
+            echo "No changes detected in built files"
+            echo "has_changes=false" >> $GITHUB_OUTPUT
+          else
+            echo "Changes detected in built files"
+            echo "has_changes=true" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Create Pull Request
+        if: steps.changes.outputs.has_changes == 'true'
+        uses: peter-evans/create-pull-request@v5
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: "chore: update UI build artifacts (main.js, bundle.css)"
+          title: "🔧 Update UI Build Artifacts"
+          body: |
+            ## UI Build Artifacts Update
+            
+            This PR updates the built UI assets (`main.js` and `bundle.css`) from the latest changes in the UI source code.
+            
+            ### Changes
+            - 📦 Updated `metaflow/plugins/cards/card_modules/main.js`
+            - 🎨 Updated `metaflow/plugins/cards/card_modules/bundle.css`
+            
+            ### Build Info
+            - **Triggered by**: @${{ github.actor }}
+            - **Source branch**: `${{ github.ref_name }}`
+            - **Build timestamp**: ${{ steps.build-info.outputs.timestamp }}
+            - **Node.js version**: 20.x
+            
+            ### Verification
+            These files were built using:
+            ```bash
+            cd metaflow/plugins/cards/ui
+            npm ci
+            npm run build
+            ```
+            
+            The build process includes:
+            - TypeScript checking (`npm run check`)
+            - ESLint validation (`npm run lint`)
+            - Vite build with minification
+            
+            ---
+            *This PR was automatically created by the Build UI Assets workflow.*
+          branch: build/ui-assets-${{ github.run_number }}
+          base: ${{ github.ref_name }}
+          delete-branch: true
+          draft: false
+          add-paths: |
+            metaflow/plugins/cards/card_modules/main.js
+            metaflow/plugins/cards/card_modules/bundle.css
+            
+      - name: Add build timestamp
+        id: build-info
+        run: echo "timestamp=$(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_OUTPUT
+        
+      - name: No changes message
+        if: steps.changes.outputs.has_changes == 'false'
+        run: |
+          echo "::notice::No changes detected in the built UI assets. The main.js and bundle.css files are already up to date."
+          
+      - name: Success message
+        if: steps.changes.outputs.has_changes == 'true'
+        run: |
+          echo "::notice::Successfully created PR with updated UI build artifacts!"
