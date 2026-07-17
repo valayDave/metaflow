@@ -54,6 +54,31 @@ class LogNormalDistribution(Distribution):
 
 
 @dataclass(frozen=True)
+class StudentTDistribution(Distribution):
+    df: float
+    loc: float = 0.0
+    scale: float = 1.0
+
+    def __post_init__(self) -> None:
+        if self.df <= 0:
+            raise ValueError("df must be positive")
+        if self.scale < 0:
+            raise ValueError("scale must be non-negative")
+
+    def sample(self, size: int, rng: random.Random) -> List[float]:
+        if self.scale == 0:
+            return [self.loc] * size
+        samples = []
+        for _ in range(size):
+            normal = rng.gauss(0.0, 1.0)
+            chi_square = rng.gammavariate(self.df / 2.0, 2.0)
+            samples.append(
+                self.loc + self.scale * normal / math.sqrt(chi_square / self.df)
+            )
+        return samples
+
+
+@dataclass(frozen=True)
 class EmpiricalDistribution(Distribution):
     samples: Tuple[float, ...]
 
@@ -318,6 +343,14 @@ def LogNormal(mu: Number, sigma: Number, name: Optional[str] = None) -> RandomVa
     )
 
 
+def StudentT(
+    df: Number, loc: Number = 0.0, scale: Number = 1.0, name: Optional[str] = None
+) -> RandomVariable:
+    return RandomVariable(
+        Source(StudentTDistribution(float(df), float(loc), float(scale)), uuid4(), name)
+    )
+
+
 def Empirical(samples: Iterable[Number], name: Optional[str] = None) -> RandomVariable:
     return RandomVariable(Source(EmpiricalDistribution(samples), uuid4(), name))
 
@@ -343,6 +376,7 @@ __all__ = [
     "Distribution",
     "NormalDistribution",
     "LogNormalDistribution",
+    "StudentTDistribution",
     "EmpiricalDistribution",
     "RandomVariable",
     "EvaluationResult",
@@ -350,6 +384,7 @@ __all__ = [
     "CompoundEvent",
     "Normal",
     "LogNormal",
+    "StudentT",
     "Empirical",
     "P",
     "exp",
